@@ -13,7 +13,7 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { resolve, dirname } from 'node:path'
-import { KNOWN_PACKAGES, LEGACY_AUTH_PACKAGE, pinSpec, findPinProblems, findLegacyRefs, authScaffold, checkBaseline } from '../src/index.mjs'
+import { KNOWN_PACKAGES, LEGACY_AUTH_PACKAGE, pinSpec, findPinProblems, findLegacyRefs, authScaffold, dbScaffold, checkBaseline } from '../src/index.mjs'
 
 function parseArgs(argv) {
   const out = { _: [], write: false, dir: null, baseline: null, strict: false }
@@ -142,19 +142,10 @@ function cmdCheck(args) {
   return bad ? 1 : 0
 }
 
-function cmdInitAuth(args) {
-  const dir = args.dir || '.'
-  const hasSrc = existsSync(resolve(dir, 'src/app'))
-  const srcDir = hasSrc ? 'src' : ''
-  if (!hasSrc && !existsSync(resolve(dir, 'app'))) {
-    console.error(`hxym18: 未检测到 ${dir}/src/app 或 ${dir}/app（Next App Router）；仍按无 src 生成，请核对路径。`)
-  }
-  const planned = authScaffold({ srcDir }).map((f) => ({
-    ...f,
-    full: resolve(dir, f.path),
-    exists: existsSync(resolve(dir, f.path)),
-  }))
-  if (args.write) {
+/** 把 scaffold 文件落盘（dry-run 只列）；路径相对 `base` 解析 */
+function applyScaffold(files, base, write, note) {
+  const planned = files.map((f) => ({ ...f, full: resolve(base, f.path), exists: existsSync(resolve(base, f.path)) }))
+  if (write) {
     let wrote = 0
     for (const f of planned) {
       if (f.exists) {
@@ -166,12 +157,47 @@ function cmdInitAuth(args) {
       console.log(`写入：${f.path}`)
       wrote++
     }
-    console.log(`\n完成，写入 ${wrote} 个文件。请补 lib/auth-routes.ts 的 resolveIdentity，并加 @hxym18/auth 依赖。`)
+    console.log(`\n完成，写入 ${wrote} 个文件。${note || ''}`)
   } else {
-    console.log(`auth 接入将生成（dry-run，加 --write 写入 ${dir}）：`)
+    console.log(`将生成（dry-run，加 --write 写入）：`)
     for (const f of planned) console.log(`  ${f.exists ? '（已存在，跳过）' : ''}${f.path}`)
-    console.log(`\n另需：package.json 加 @hxym18/auth（hxym18 add auth --write）；env: AUTH_INTERNAL_URL / AUTH_INTERNAL_SECRET。`)
+    if (note) console.log(`\n${note}`)
   }
+  return 0
+}
+
+function cmdInitAuth(args) {
+  const dir = args.dir || '.'
+  const hasSrc = existsSync(resolve(dir, 'src/app'))
+  const srcDir = hasSrc ? 'src' : ''
+  if (!hasSrc && !existsSync(resolve(dir, 'app'))) {
+    console.error(`hxym18: 未检测到 ${dir}/src/app 或 ${dir}/app（Next App Router）；仍按无 src 生成，请核对路径。`)
+  }
+  return applyScaffold(
+    authScaffold({ srcDir }),
+    dir,
+    args.write,
+    '另需：package.json 加 @hxym18/auth（hxym18 add auth --write）；补 lib/auth-routes.ts 的 resolveIdentity；env: AUTH_INTERNAL_URL / AUTH_INTERNAL_SECRET。',
+  )
+}
+
+function cmdInitDb(args) {
+  const dir = args.dir || 'server/src'
+  return applyScaffold(
+    dbScaffold({ dir }),
+    '.',
+    args.write,
+    '按需替换 migrations 里的示例表；在服务启动处调用 migrate()。规范默认后端 = Hono + better-sqlite3 + 版本化迁移。',
+  )
+}
+
+function cmdInitStats(args) {
+  const dir = args.dir || '.'
+  console.log(`stats（业务统计只读出口）接入清单（${dir}）：`)
+  console.log('  1. 业务事件写入**本项目库**的业务表（不进共享库）')
+  console.log('  2. 只读出口 GET /api/ops/stats：带 `x-ops-token` 才可读（token = env OPS_STATS_TOKEN）')
+  console.log('  3. 缺项≠0：读不到给 null，界面显「—」')
+  console.log('  参考：fang apps/fang/src/app/api/ops/stats/route.ts；规范：knowledge/crosscutting-policy.md（X8）')
   return 0
 }
 
@@ -182,8 +208,15 @@ function main() {
     if (cmd === 'list') return cmdList()
     if (cmd === 'add') return cmdAdd(args)
     if (cmd === 'check') return cmdCheck(args)
-    if (cmd === 'init' && args._[1] === 'auth') return cmdInitAuth(args)
-    console.error('用法：hxym18 <add|check|init auth|list> ...')
+    if (cmd === 'init') {
+      const sub = args._[1]
+      if (sub === 'auth') return cmdInitAuth(args)
+      if (sub === 'db') return cmdInitDb(args)
+      if (sub === 'stats') return cmdInitStats(args)
+      console.error('init 支持：auth | db | stats')
+      return 1
+    }
+    console.error('用法：hxym18 <add|check|init auth|init db|init stats|list> ...')
     return 1
   } catch (e) {
     console.error(`hxym18: ${(e && e.message) || e}`)

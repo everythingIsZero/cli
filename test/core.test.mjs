@@ -92,3 +92,13 @@ test('checkBaseline：空/缺基线返回空', async () => {
   assert.deepEqual(checkBaseline({ '@hxym18/auth': 'x' }, null), [])
   assert.deepEqual(checkBaseline({}, { packages: {} }), [])
 })
+
+test('dbScaffold：生成 db.ts + migrations.ts（WAL/foreign_keys/user_version）', async () => {
+  const { dbScaffold } = await import('../src/index.mjs')
+  const files = dbScaffold({ dir: 'server/src' })
+  assert.deepEqual(files.map((f) => f.path), ['server/src/db.ts', 'server/src/migrations.ts'])
+  assert.match(files[0].content, /journal_mode = WAL/)
+  assert.match(files[0].content, /foreign_keys = ON/)
+  assert.match(files[1].content, /user_version/)
+  assert.match(files[1].content, /MIGRATIONS/)
+})

@@ -21,6 +21,8 @@ npx hxym18 <cmd>
 | `hxym18 add <repo> [--write] [--dir <dir>]` | 解析该仓**最新 tag**，产出并（`--write`）写入锁定依赖；默认 dry-run |
 | `hxym18 check [dir] [--baseline <file>] [--strict]` | 校验：`@hxym18/*` 依赖是否 tag 锁版、src 是否有旧包名残留、是否与版本基线一致。**有问题 exit=1**；基线不一致默认只告警，`--strict` 视为失败 |
 | `hxym18 init auth [--write] [--dir <dir>]` | 生成 auth 接入文件（Next App Router：`lib/auth-routes.ts` + `app/api/auth/[action]/route.ts` + `config/route.ts`）；默认 dry-run，`--write` 落盘且**幂等**（已存在则跳过） |
+| `hxym18 init db [--write] [--dir <dir>]` | 生成后端数据层骨架（Hono + better-sqlite3 + 版本化迁移）：`db.ts`（WAL/foreign_keys，禁 DDL）+ `migrations.ts`（`PRAGMA user_version`）；默认 `server/src` |
+| `hxym18 init stats` | 打印业务统计只读出口（`/api/ops/stats` + `OPS_STATS_TOKEN`）接入清单（含参考实现指针） |
 
 示例：
 

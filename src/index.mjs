@@ -6,5 +6,6 @@ export {
   findPinProblems,
   findLegacyRefs,
   authScaffold,
+  dbScaffold,
   checkBaseline,
 } from './core.mjs'

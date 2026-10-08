@@ -133,3 +133,65 @@ export function authScaffold(opts) {
     { path: p('app/api/auth/config/route.ts'), content: AUTH_CONFIG_ROUTE_TS },
   ]
 }
+
+const DB_TS = `/**
+ * db.ts — SQLite 连接单例（WAL + foreign_keys；**本文件禁 DDL**，迁移见 migrations.ts）
+ * 由 \`hxym18 init db\` 生成；基准参考 hmd2 / nuantie 的 db.ts。
+ */
+import Database from 'better-sqlite3'
+
+let db: Database.Database | null = null
+
+export function getDb(): Database.Database {
+  if (db) return db
+  const file = process.env.DB_FILE || './data/app.db'
+  db = new Database(file)
+  db.pragma('journal_mode = WAL')
+  db.pragma('foreign_keys = ON')
+  return db
+}
+`
+
+const MIGRATIONS_TS = `/**
+ * migrations.ts — 版本化迁移（PRAGMA user_version 递增；db.ts 禁 DDL）
+ * 由 \`hxym18 init db\` 生成。规则：只追加新迁移，不改历史项；可重入、版本递增。
+ */
+import type Database from 'better-sqlite3'
+import { getDb } from './db'
+
+const MIGRATIONS: Array<(db: Database.Database) => void> = [
+  // v1 —— 示例表，按需替换
+  (db) => {
+    db.exec(\`
+      CREATE TABLE IF NOT EXISTS example (
+        id TEXT PRIMARY KEY,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+    \`)
+  },
+]
+
+export function migrate(): void {
+  const db = getDb()
+  const current = db.pragma('user_version', { simple: true }) as number
+  for (let v = current; v < MIGRATIONS.length; v++) {
+    MIGRATIONS[v](db)
+    db.pragma(\`user_version = \${v + 1}\`)
+  }
+}
+`
+
+/**
+ * 生成后端数据层骨架（Hono + better-sqlite3 + 版本化迁移 = 规范默认后端）。
+ * @param {{ dir?: string }} [opts] 目标目录（如 'server/src'）
+ * @returns {{ path: string, content: string }[]}
+ */
+export function dbScaffold(opts) {
+  const o = opts || {}
+  const base = (typeof o.dir === 'string' ? o.dir : 'server/src').replace(/\/+$/, '')
+  const p = (name) => (base ? `${base}/${name}` : name)
+  return [
+    { path: p('db.ts'), content: DB_TS },
+    { path: p('migrations.ts'), content: MIGRATIONS_TS },
+  ]
+}

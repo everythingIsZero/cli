@@ -4,6 +4,13 @@
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-10-08
+
+### Added
+
+- `hxym18 init db [--write] [--dir]`：生成后端数据层骨架（`db.ts` WAL/foreign_keys 禁 DDL + `migrations.ts` 版本化迁移）；核心 `dbScaffold`。
+- `hxym18 init stats`：打印业务统计只读出口接入清单。
+
 ## [0.1.3] - 2026-10-08
 
 ### Fixed
