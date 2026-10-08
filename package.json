@@ -1,0 +1,31 @@
+{
+  "name": "@hxym18/cli",
+  "version": "0.1.0",
+  "description": "共享包接入 CLI：add（解析最新 tag 写依赖）· check（校验横切件接入）· init auth（生成接入文件）",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/everythingIsZero/cli.git"
+  },
+  "bin": {
+    "hxym18": "./bin/hxym18.mjs"
+  },
+  "files": [
+    "src",
+    "bin",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "import": "./src/index.mjs",
+      "default": "./src/index.mjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "test": "node --test 'test/**/*.test.mjs'"
+  }
+}
