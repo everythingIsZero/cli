@@ -4,6 +4,12 @@
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-08
+
+### Added
+
+- `hxym18 init auth --write`：真正生成接入文件（`lib/auth-routes.ts` / `app/api/auth/[action]/route.ts` / `config/route.ts`），幂等（已存在跳过）；核心 `authScaffold`。
+
 ## [0.1.0] - 2026-10-08
 
 ### Added

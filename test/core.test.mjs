@@ -44,3 +44,26 @@ test('findLegacyRefs：扫描旧包名残留（@app/auth）', () => {
   assert.deepEqual(findLegacyRefs("import { x } from '@hxym18/auth'"), [])
   assert.deepEqual(findLegacyRefs(''), [])
 })
+
+test('authScaffold：生成 auth 接入文件（含 src 基目录）', async () => {
+  const { authScaffold } = await import('../src/index.mjs')
+  const files = authScaffold({ srcDir: 'src' })
+  const paths = files.map((f) => f.path)
+  assert.deepEqual(paths, [
+    'src/lib/auth-routes.ts',
+    'src/app/api/auth/[action]/route.ts',
+    'src/app/api/auth/config/route.ts',
+  ])
+  const byPath = Object.fromEntries(files.map((f) => [f.path, f.content]))
+  assert.match(byPath['src/lib/auth-routes.ts'], /createAuthRoutes/)
+  assert.match(byPath['src/lib/auth-routes.ts'], /@hxym18\/auth\/next/)
+  assert.match(byPath['src/app/api/auth/[action]/route.ts'], /routes\.dispatch/)
+  assert.match(byPath['src/app/api/auth/config/route.ts'], /wxConfigured/)
+})
+
+test('authScaffold：无 src 目录时基目录为空', async () => {
+  const { authScaffold } = await import('../src/index.mjs')
+  const paths = authScaffold({ srcDir: '' }).map((f) => f.path)
+  assert.ok(paths.includes('lib/auth-routes.ts'))
+  assert.ok(paths.includes('app/api/auth/[action]/route.ts'))
+})

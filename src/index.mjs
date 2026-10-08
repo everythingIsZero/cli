@@ -5,4 +5,5 @@ export {
   isTagPin,
   findPinProblems,
   findLegacyRefs,
+  authScaffold,
 } from './core.mjs'

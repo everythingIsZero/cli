@@ -10,11 +10,10 @@
  *
  * 退出码：check 有问题 → 1；其余 0（打印类命令失败 → 1）。
  */
-import { readFileSync, writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
-import { resolve } from 'node:path'
-import { existsSync } from 'node:fs'
-import { KNOWN_PACKAGES, LEGACY_AUTH_PACKAGE, pinSpec, findPinProblems, findLegacyRefs } from '../src/index.mjs'
+import { resolve, dirname } from 'node:path'
+import { KNOWN_PACKAGES, LEGACY_AUTH_PACKAGE, pinSpec, findPinProblems, findLegacyRefs, authScaffold } from '../src/index.mjs'
 
 function parseArgs(argv) {
   const out = { _: [], write: false, dir: null }
@@ -115,13 +114,34 @@ function cmdCheck(args) {
 
 function cmdInitAuth(args) {
   const dir = args.dir || '.'
-  console.log(`auth 接入（@hxym18/auth）需在 ${dir} 具备：`)
-  console.log('  1. package.json: "@hxym18/auth": "github:everythingIsZero/auth#v<semver>"（用 hxym18 add auth --write）')
-  console.log('  2. 服务端：src/lib/auth-routes.ts 用 createAuthRoutes（@hxym18/auth/next），声明 resolveIdentity')
-  console.log('  3. 路由：app/api/auth/{sso-verify,wx-qrcode,wx-poll,logout,config}/route.ts（转发 routes.*）')
-  console.log('  4. 客户端：登录页用 useSsoLogin（@hxym18/auth/react）+ capabilities（@hxym18/env）')
-  console.log('  5. env: AUTH_INTERNAL_URL / AUTH_INTERNAL_SECRET（+ AUTH_ISSUE_ORG 可选）')
-  console.log('  契约与示例见 knowledge/integration/ 与 @hxym18/auth/README.md')
+  const hasSrc = existsSync(resolve(dir, 'src/app'))
+  const srcDir = hasSrc ? 'src' : ''
+  if (!hasSrc && !existsSync(resolve(dir, 'app'))) {
+    console.error(`hxym18: 未检测到 ${dir}/src/app 或 ${dir}/app（Next App Router）；仍按无 src 生成，请核对路径。`)
+  }
+  const planned = authScaffold({ srcDir }).map((f) => ({
+    ...f,
+    full: resolve(dir, f.path),
+    exists: existsSync(resolve(dir, f.path)),
+  }))
+  if (args.write) {
+    let wrote = 0
+    for (const f of planned) {
+      if (f.exists) {
+        console.log(`跳过（已存在）：${f.path}`)
+        continue
+      }
+      mkdirSync(dirname(f.full), { recursive: true })
+      writeFileSync(f.full, f.content)
+      console.log(`写入：${f.path}`)
+      wrote++
+    }
+    console.log(`\n完成，写入 ${wrote} 个文件。请补 lib/auth-routes.ts 的 resolveIdentity，并加 @hxym18/auth 依赖。`)
+  } else {
+    console.log(`auth 接入将生成（dry-run，加 --write 写入 ${dir}）：`)
+    for (const f of planned) console.log(`  ${f.exists ? '（已存在，跳过）' : ''}${f.path}`)
+    console.log(`\n另需：package.json 加 @hxym18/auth（hxym18 add auth --write）；env: AUTH_INTERNAL_URL / AUTH_INTERNAL_SECRET。`)
+  }
   return 0
 }
 
