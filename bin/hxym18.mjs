@@ -88,17 +88,22 @@ function cmdCheck(args) {
   const dir = args._[1] || args.dir || '.'
   const { json } = readPkg(dir)
   const problems = findPinProblems(json.dependencies || {})
-  const srcDir = resolve(dir, 'src')
-  // 旧包残留：粗扫 src（存在才扫）
+  // 旧包残留：只扫**代码文件**里的引用（import/require 等）+ package.json 依赖键，
+  // 不把 README/Dockerfile 里的历史叙述当残留。
+  const codeGlobs = ['--include=*.ts', '--include=*.tsx', '--include=*.js', '--include=*.jsx', '--include=*.mjs', '--include=*.cjs']
   let legacy = []
-  if (existsSync(srcDir)) {
-    try {
-      const grep = execFileSync('grep', ['-rlF', LEGACY_AUTH_PACKAGE, srcDir], { encoding: 'utf8' })
-      legacy = grep.split('\n').filter(Boolean)
-    } catch {
-      /* grep 无匹配退出 1 */
-    }
+  try {
+    const grep = execFileSync(
+      'grep',
+      ['-rlF', ...codeGlobs, '--exclude-dir=node_modules', '--exclude-dir=.next', '--exclude-dir=.git', '--exclude-dir=dist', LEGACY_AUTH_PACKAGE, dir],
+      { encoding: 'utf8' },
+    )
+    legacy = grep.split('\n').filter(Boolean)
+  } catch {
+    /* grep 无匹配退出 1 */
   }
+  const legacyDep = (json.dependencies || {})[LEGACY_AUTH_PACKAGE] || (json.devDependencies || {})[LEGACY_AUTH_PACKAGE]
+  if (legacyDep) legacy.push(`package.json 依赖：${LEGACY_AUTH_PACKAGE}=${legacyDep}`)
   let bad = false
   if (problems.length) {
     bad = true

@@ -4,6 +4,12 @@
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-10-08
+
+### Fixed
+
+- `check` 旧包名残留扫描改为全仓（排除 node_modules/.next/.git/dist），修复无 `src` 目录的项目漏扫。
+
 ## [0.1.2] - 2026-10-08
 
 ### Added
