@@ -4,6 +4,12 @@
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-10-08
+
+### Added
+
+- `check --baseline <file>`：与版本基线（`knowledge/integration/baseline.json`）比对共享包版本，默认 advisory，`--strict` 视为失败；核心 `checkBaseline`。
+
 ## [0.1.1] - 2026-10-08
 
 ### Added

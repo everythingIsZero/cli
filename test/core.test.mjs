@@ -67,3 +67,28 @@ test('authScaffold：无 src 目录时基目录为空', async () => {
   assert.ok(paths.includes('lib/auth-routes.ts'))
   assert.ok(paths.includes('app/api/auth/[action]/route.ts'))
 })
+
+test('checkBaseline：与基线的共享包版本不一致即列出（未引入的不报）', async () => {
+  const { checkBaseline } = await import('../src/index.mjs')
+  const baseline = {
+    packages: {
+      '@hxym18/auth': 'github:everythingIsZero/auth#v0.1.2',
+      '@hxym18/pwa-kit': 'github:everythingIsZero/pwa-kit#v0.2.1',
+      '@hxym18/analytics': 'github:everythingIsZero/analytics#v0.1.0',
+    },
+  }
+  const deps = {
+    '@hxym18/auth': 'github:everythingIsZero/auth#v0.1.1',
+    '@hxym18/pwa-kit': 'github:everythingIsZero/pwa-kit#v0.2.1',
+    next: '14.2.32',
+  }
+  assert.deepEqual(checkBaseline(deps, baseline), [
+    { name: '@hxym18/auth', expected: 'github:everythingIsZero/auth#v0.1.2', actual: 'github:everythingIsZero/auth#v0.1.1' },
+  ])
+})
+
+test('checkBaseline：空/缺基线返回空', async () => {
+  const { checkBaseline } = await import('../src/index.mjs')
+  assert.deepEqual(checkBaseline({ '@hxym18/auth': 'x' }, null), [])
+  assert.deepEqual(checkBaseline({}, { packages: {} }), [])
+})

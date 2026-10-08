@@ -56,6 +56,25 @@ export function findLegacyRefs(text) {
   return s.includes(LEGACY_AUTH_PACKAGE) ? [LEGACY_AUTH_PACKAGE] : []
 }
 
+/**
+ * 与版本基线比对共享包版本（未引入的包不报）。
+ * @param {Record<string,string>} deps 项目 dependencies
+ * @param {{ packages?: Record<string,string> } | null} baseline
+ * @returns {{ name: string, expected: string, actual: string }[]}
+ */
+export function checkBaseline(deps, baseline) {
+  const b = baseline && typeof baseline === 'object' ? baseline : null
+  if (!b || !b.packages || typeof b.packages !== 'object') return []
+  const d = deps && typeof deps === 'object' ? deps : {}
+  const out = []
+  for (const [name, expected] of Object.entries(b.packages)) {
+    const actual = d[name]
+    if (actual === undefined) continue
+    if (actual !== expected) out.push({ name, expected, actual })
+  }
+  return out
+}
+
 const AUTH_ROUTES_TS = `/**
  * auth 路由装配（由 \`hxym18 init auth\` 生成；请按本站实际补 resolveIdentity）。
  * 分工：统一层认人，本站用人——这里只声明「openid → 本站 uid」。

@@ -13,14 +13,16 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { resolve, dirname } from 'node:path'
-import { KNOWN_PACKAGES, LEGACY_AUTH_PACKAGE, pinSpec, findPinProblems, findLegacyRefs, authScaffold } from '../src/index.mjs'
+import { KNOWN_PACKAGES, LEGACY_AUTH_PACKAGE, pinSpec, findPinProblems, findLegacyRefs, authScaffold, checkBaseline } from '../src/index.mjs'
 
 function parseArgs(argv) {
-  const out = { _: [], write: false, dir: null }
+  const out = { _: [], write: false, dir: null, baseline: null, strict: false }
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
     if (a === '--write') out.write = true
+    else if (a === '--strict') out.strict = true
     else if (a === '--dir') out.dir = argv[++i]
+    else if (a === '--baseline') out.baseline = argv[++i]
     else out._.push(a)
   }
   return out
@@ -107,6 +109,29 @@ function cmdCheck(args) {
     bad = true
     console.error(`✗ 旧包名 ${LEGACY_AUTH_PACKAGE} 残留：`)
     for (const f of legacy) console.error(`  - ${f}`)
+  }
+  // 版本基线（advisory，--strict 视为失败）
+  const baselinePath = args.baseline || process.env.HXYM18_BASELINE
+  if (baselinePath) {
+    if (!existsSync(baselinePath)) {
+      console.error(`hxym18: 基线文件不存在：${baselinePath}`)
+    } else {
+      let deviations = []
+      try {
+        deviations = checkBaseline(json.dependencies || {}, JSON.parse(readFileSync(baselinePath, 'utf8')))
+      } catch (e) {
+        console.error(`hxym18: 基线文件解析失败 ${baselinePath}: ${(e && e.message) || e}`)
+      }
+      if (deviations.length) {
+        const lines = deviations.map((d) => `  - ${d.name}: ${d.actual}（基线 ${d.expected}）`).join('\n')
+        if (args.strict) {
+          bad = true
+          console.error(`✗ 与版本基线不一致（strict）：\n${lines}`)
+        } else {
+          console.warn(`⚠ 与版本基线不一致（advisory；加 --strict 视为失败）：\n${lines}`)
+        }
+      }
+    }
   }
   if (!bad) console.log(`✓ ${dir} 接入检查通过`)
   return bad ? 1 : 0
