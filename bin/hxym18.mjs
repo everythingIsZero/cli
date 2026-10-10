@@ -124,8 +124,9 @@ function cmdCheck(args) {
           { encoding: 'utf8' },
         )
         present.push(pkg)
-      } catch {
-        /* grep 无匹配（exit 1）→ 不计入 present */
+      } catch (e) {
+        // 仅「无匹配（exit 1）」= 未出现；其余错误不确定 → 视为已出现，避免误报死依赖。
+        if (!(e && e.status === 1)) present.push(pkg)
       }
     }
   }
