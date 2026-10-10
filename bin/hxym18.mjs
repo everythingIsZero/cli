@@ -5,7 +5,8 @@
  * 用法：
  *   hxym18 add <repo> [--write] [--dir <项目目录>]   解析最新 tag 并（可选）写入 package.json
  *   hxym18 check [dir]                                校验横切件接入（tag 锁版 / 旧包残留），可失败
- *   hxym18 init auth [--dir <目录>]                   打印 auth 接入所需文件清单（dry-run）
+ *   hxym18 init auth [--target next|taro] [--write] [--dir <目录>]  生成 auth 接入文件（缺省自动探测项目类型）
+ *   hxym18 init db [--write] [--dir <项目根>]                      生成后端数据层骨架（落 <根>/server/src/）
  *   hxym18 list                                       列出已知共享包
  *
  * 退出码：check 有问题 → 1；其余 0（打印类命令失败 → 1）。
@@ -13,16 +14,17 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { resolve, dirname } from 'node:path'
-import { KNOWN_PACKAGES, LEGACY_AUTH_PACKAGE, pinSpec, findPinProblems, findLegacyRefs, authScaffold, dbScaffold, checkBaseline } from '../src/index.mjs'
+import { KNOWN_PACKAGES, LEGACY_AUTH_PACKAGE, pinSpec, findPinProblems, depsForCheck, findLegacyRefs, authScaffold, taroAuthScaffold, dbScaffold, checkBaseline } from '../src/index.mjs'
 
 function parseArgs(argv) {
-  const out = { _: [], write: false, dir: null, baseline: null, strict: false }
+  const out = { _: [], write: false, dir: null, baseline: null, strict: false, target: null }
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
     if (a === '--write') out.write = true
     else if (a === '--strict') out.strict = true
     else if (a === '--dir') out.dir = argv[++i]
     else if (a === '--baseline') out.baseline = argv[++i]
+    else if (a === '--target') out.target = argv[++i]
     else out._.push(a)
   }
   return out
@@ -87,11 +89,13 @@ function cmdAdd(args) {
 function cmdCheck(args) {
   const dir = args._[1] || args.dir || '.'
   const { json } = readPkg(dir)
-  const problems = findPinProblems(json.dependencies || {})
+  const allDeps = depsForCheck(json)
+  const problems = findPinProblems(allDeps)
   // 旧包残留：只扫**代码文件**里的引用（import/require 等）+ package.json 依赖键，
   // 不把 README/Dockerfile 里的历史叙述当残留。
   const codeGlobs = ['--include=*.ts', '--include=*.tsx', '--include=*.js', '--include=*.jsx', '--include=*.mjs', '--include=*.cjs']
   let legacy = []
+  let grepFailed = false
   try {
     const grep = execFileSync(
       'grep',
@@ -99,10 +103,14 @@ function cmdCheck(args) {
       { encoding: 'utf8' },
     )
     legacy = grep.split('\n').filter(Boolean)
-  } catch {
-    /* grep 无匹配退出 1 */
+  } catch (e) {
+    // grep 退出码 1 = 无匹配（正常）；其余（含 grep 缺失）视为扫描失败——不得静默通过。
+    if (!(e && e.status === 1)) grepFailed = true
   }
-  const legacyDep = (json.dependencies || {})[LEGACY_AUTH_PACKAGE] || (json.devDependencies || {})[LEGACY_AUTH_PACKAGE]
+  const legacyDep =
+    (json.dependencies || {})[LEGACY_AUTH_PACKAGE] ||
+    (json.devDependencies || {})[LEGACY_AUTH_PACKAGE] ||
+    (json.peerDependencies || {})[LEGACY_AUTH_PACKAGE]
   if (legacyDep) legacy.push(`package.json 依赖：${LEGACY_AUTH_PACKAGE}=${legacyDep}`)
   let bad = false
   if (problems.length) {
@@ -115,6 +123,10 @@ function cmdCheck(args) {
     console.error(`✗ 旧包名 ${LEGACY_AUTH_PACKAGE} 残留：`)
     for (const f of legacy) console.error(`  - ${f}`)
   }
+  if (grepFailed) {
+    bad = true
+    console.error(`✗ 旧包名残留扫描失败（grep 不可用或异常，${dir}）：不得视为通过`)
+  }
   // 版本基线（advisory，--strict 视为失败）
   const baselinePath = args.baseline || process.env.HXYM18_BASELINE
   if (baselinePath) {
@@ -123,7 +135,7 @@ function cmdCheck(args) {
     } else {
       let deviations = []
       try {
-        deviations = checkBaseline(json.dependencies || {}, JSON.parse(readFileSync(baselinePath, 'utf8')))
+        deviations = checkBaseline(allDeps, JSON.parse(readFileSync(baselinePath, 'utf8')))
       } catch (e) {
         console.error(`hxym18: 基线文件解析失败 ${baselinePath}: ${(e && e.message) || e}`)
       }
@@ -166,26 +178,53 @@ function applyScaffold(files, base, write, note) {
   return 0
 }
 
+/** 探测项目类型：Next App Router 还是 Taro。 */
+function detectAuthTarget(dir) {
+  const hasNext = existsSync(resolve(dir, 'src/app')) || existsSync(resolve(dir, 'app'))
+  const taroMarkers = ['src/app.tsx', 'src/app.ts', 'src/app.config.ts', 'app.tsx', 'app.ts', 'app.config.ts']
+  const hasTaro = taroMarkers.some((m) => existsSync(resolve(dir, m)))
+  return { hasNext, hasTaro }
+}
+
 function cmdInitAuth(args) {
   const dir = args.dir || '.'
-  const hasSrc = existsSync(resolve(dir, 'src/app'))
-  const srcDir = hasSrc ? 'src' : ''
-  if (!hasSrc && !existsSync(resolve(dir, 'app'))) {
-    console.error(`hxym18: 未检测到 ${dir}/src/app 或 ${dir}/app（Next App Router）；仍按无 src 生成，请核对路径。`)
+  const { hasNext, hasTaro } = detectAuthTarget(dir)
+  // 显式 --target 优先；否则按项目特征自动判定；两者皆无/皆中 → fail-closed（不写错文件）。
+  const target = args.target || (hasNext && !hasTaro ? 'next' : hasTaro && !hasNext ? 'taro' : null)
+  if (!target) {
+    console.error(
+      `hxym18: 无法判定项目类型（${dir}）：Next=${hasNext} Taro=${hasTaro}。请显式指定 --target next|taro。`,
+    )
+    return 1
   }
-  return applyScaffold(
-    authScaffold({ srcDir }),
-    dir,
-    args.write,
-    '另需：package.json 加 @hxym18/auth（hxym18 add auth --write）；补 lib/auth-routes.ts 的 resolveIdentity；env: AUTH_INTERNAL_URL / AUTH_INTERNAL_SECRET。',
-  )
+  if (target === 'next') {
+    const srcDir = existsSync(resolve(dir, 'src/app')) ? 'src' : ''
+    return applyScaffold(
+      authScaffold({ srcDir }),
+      dir,
+      args.write,
+      '另需：package.json 加 @hxym18/auth（hxym18 add auth --write）；补 lib/auth-routes.ts 的 resolveIdentity；env: AUTH_INTERNAL_URL / AUTH_INTERNAL_SECRET。',
+    )
+  }
+  if (target === 'taro') {
+    const srcDir = existsSync(resolve(dir, 'src')) ? 'src' : ''
+    return applyScaffold(
+      taroAuthScaffold({ srcDir }),
+      dir,
+      args.write,
+      '另需：package.json 加 @hxym18/auth + @hxym18/env（hxym18 add auth --write / hxym18 add env --write）。客户端接线 + Hono 服务端装配已生成；只补 server/src/auth.ts 的 resolveIdentity（唯一业务回调）。',
+    )
+  }
+  console.error(`hxym18: 未知 --target「${target}」，支持 next | taro。`)
+  return 1
 }
 
 function cmdInitDb(args) {
-  const dir = args.dir || 'server/src'
+  // --dir = 项目根（与 init auth 统一语义）；db 固定落 <root>/server/src/
+  const root = args.dir || '.'
   return applyScaffold(
-    dbScaffold({ dir }),
-    '.',
+    dbScaffold({ dir: 'server/src' }),
+    root,
     args.write,
     '按需替换 migrations 里的示例表；在服务启动处调用 migrate()。规范默认后端 = Hono + better-sqlite3 + 版本化迁移。',
   )
@@ -197,7 +236,7 @@ function cmdInitStats(args) {
   console.log('  1. 业务事件写入**本项目库**的业务表（不进共享库）')
   console.log('  2. 只读出口 GET /api/ops/stats：带 `x-ops-token` 才可读（token = env OPS_STATS_TOKEN）')
   console.log('  3. 缺项≠0：读不到给 null，界面显「—」')
-  console.log('  参考：fang apps/fang/src/app/api/ops/stats/route.ts；规范：knowledge/crosscutting-policy.md（X8）')
+  console.log('  参考实现：fang apps/fang/src/app/api/ops/stats/route.ts')
   return 0
 }
 

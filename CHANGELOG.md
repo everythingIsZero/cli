@@ -4,6 +4,22 @@
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-10
+
+### Added
+
+- `init auth --target next|taro`：新增 **Taro** 目标，生成**客户端 `src/lib/sso-login.ts`（H5 `createTaroLogin`+`createTaroApi`、小程序 `createWeappLogin`）+ Hono 服务端 `server/src/auth.ts`（`createHonoAuthRoutes`，weapp 走核心 `weappVerify`）**，H5 与 Next 对等、小程序端登录走共享核心；缺省按项目特征**自动探测**，判定不出/两者皆中 → `exit=1`——不再对非 Next 目录静默写错文件。
+- 核心纯函数 `taroAuthScaffold` / `depsForCheck`。
+
+### Changed
+
+- `init auth` / `init db` 的 `--dir` 统一为**项目根**；`init db` 固定落 `<根>/server/src/`（原 `init db --dir` 语义是「直接目标目录」，与 `init auth` 不一致）。
+
+### Fixed
+
+- `check` 改扫 `dependencies + devDependencies + peerDependencies`：放 devDependencies 的未锁版共享包此前能逃过门禁。
+- `check` 旧包名残留扫描：`grep` 不可用/异常时视为**失败**（原 `catch` 把一切错误当「无匹配」，会静默通过）。
+
 ## [0.1.4] - 2026-10-08
 
 ### Added

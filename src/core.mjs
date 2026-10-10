@@ -50,6 +50,22 @@ export function findPinProblems(deps) {
   return out
 }
 
+/**
+ * 汇总用于 check 的依赖视图：dependencies + devDependencies + peerDependencies。
+ * 为什么合并：共享包放 devDependencies/peerDependencies 也须 tag 锁版，
+ * 旧版只扫 dependencies 会漏（放 devDeps 的未锁版能逃过门禁）。
+ * @param {any} json package.json 解析结果
+ * @returns {Record<string,string>}
+ */
+export function depsForCheck(json) {
+  const j = json && typeof json === 'object' ? json : {}
+  return {
+    ...(j.dependencies || {}),
+    ...(j.devDependencies || {}),
+    ...(j.peerDependencies || {}),
+  }
+}
+
 /** 扫描源码里的旧包名残留 */
 export function findLegacyRefs(text) {
   const s = typeof text === 'string' ? text : ''
@@ -97,7 +113,7 @@ export const routes = createAuthRoutes({
 })
 `
 
-const AUTH_ACTION_ROUTE_TS = `/** /api/auth/<action> 通配（sso-verify | wx-qrcode | wx-poll | logout） */
+const AUTH_ACTION_ROUTE_TS = `/** /api/auth/<action> 通配（sso-verify | wx-qrcode | wx-poll | weapp | logout） */
 import { routes } from '@/lib/auth-routes'
 
 export const dynamic = 'force-dynamic'
@@ -131,6 +147,107 @@ export function authScaffold(opts) {
     { path: p('lib/auth-routes.ts'), content: AUTH_ROUTES_TS },
     { path: p('app/api/auth/[action]/route.ts'), content: AUTH_ACTION_ROUTE_TS },
     { path: p('app/api/auth/config/route.ts'), content: AUTH_CONFIG_ROUTE_TS },
+  ]
+}
+
+const TARO_SSO_LOGIN_TS = `/**
+ * sso-login.ts — Taro 统一登录接线（由 \`hxym18 init auth --target taro\` 生成）。
+ * 分工：H5 走共享控制器（createTaroLogin + createTaroApi）；
+ *       小程序(weapp/tt) 登录走各自身份源（Taro.login），本文件不介入。
+ */
+import Taro from '@tarojs/taro'
+import { capabilities } from '@hxym18/env'
+import { createTaroLogin, createTaroApi, createWeappLogin } from '@hxym18/auth/taro'
+
+const isH5 = process.env.TARO_ENV === 'h5'
+const nav = typeof navigator !== 'undefined' ? navigator : undefined
+
+export const login = createTaroLogin({
+  isH5,
+  // 能力位单一来源 @hxym18/env；漏传会按 PC 处理（漏终端）
+  caps: capabilities({
+    ua: (isH5 && nav && nav.userAgent) || '',
+    maxTouchPoints: (isH5 && nav && nav.maxTouchPoints) || 0,
+  }),
+  // 小程序无标准 fetch：注入 Taro.request，不必手写 config/qrcode/poll/verify/devLogin
+  api: createTaroApi({
+    request: (opts) => Taro.request(opts as any),
+  }),
+})
+
+/** 挂载即调用：消费 ?sso=return 回跳（微信内静默登录） */
+export function consumeSsoReturn() {
+  return login.consumeReturn()
+}
+
+/** 微信内置浏览器：跳门面静默授权（回跳带 sso=return） */
+export function startSso() {
+  login.startSso()
+}
+
+export function getLoginState() {
+  return login.getState()
+}
+
+/**
+ * 小程序登录（weapp/tt）：Taro.login 取 code → 站点 /api/auth/weapp（共享核心换码+锚定）→ 存 token。
+ * 通道故障不清已有 token（血泪：瞬时失败清 token 会让设备身份漂移）。
+ */
+export const weappLogin = createWeappLogin({
+  Taro,
+  request: (code) => Taro.request({ url: '/api/auth/weapp', method: 'POST', data: { code } }).then((r) => r.data),
+  store: { set: (t) => Taro.setStorageSync('token', t) },
+})
+`
+
+const TARO_SERVER_AUTH_TS = `/**
+ * auth.ts — Hono 服务端 auth 装配（由 \`hxym18 init auth --target taro\` 生成）。
+ * 分工：统一层认人，本站用人——你只需补 resolveIdentity（openid/unionid → 本站 user）。
+ * 挂载：const app = new Hono(); app.route('/', authRoutes)
+ */
+import { Hono } from 'hono'
+import { createHonoAuthRoutes } from '@hxym18/auth/hono'
+
+export const authRoutes = new Hono()
+
+const routes = createHonoAuthRoutes({
+  // 密钥传函数：运行期注入的 env 在装配期读不到；缺配由工厂 fail-closed 返 503
+  session: { secret: () => process.env.SESSION_SECRET || '' },
+  anchor: 'identity',
+  async resolveIdentity(openid, ctx) {
+    // TODO: 用本站身份库锚定。锚键建议 ctx.unionid ?? openid（绑定同一微信开放平台后 unionid 跨端统一）
+    //   已锚定返回老用户，否则建号；头像昵称可用 ctx.nickname / ctx.avatar
+    void ctx
+    void openid
+    throw new Error('resolveIdentity 未实现：请在 server/src/auth.ts 补本站锚定')
+  },
+})
+
+authRoutes.post('/api/auth/sso-verify', (c) => routes.ssoVerify(c))
+authRoutes.get('/api/auth/wx-qrcode', (c) => routes.wxQrcode(c))
+authRoutes.get('/api/auth/wx-poll', (c) => routes.wxPoll(c))
+authRoutes.post('/api/auth/logout', (c) => routes.logout(c))
+authRoutes.get('/api/auth/config', (c) =>
+  c.json({ ok: true, wxEnabled: routes.wxConfigured(), devLogin: process.env.AUTH_DEV_LOGIN === '1' }),
+)
+
+/** 微信小程序登录：Taro.login code → 共享核心换码+锚定+签 token（复用 resolveIdentity，站点无需再写） */
+authRoutes.post('/api/auth/weapp', (c) => routes.weappVerify(c))
+`
+
+/**
+ * 生成 Taro 接入文件：客户端接线 + Hono 服务端装配（H5 与 Next 对等；小程序端登录站点自备）。
+ * @param {{ srcDir?: string }} [opts] srcDir 为空串则视客户端源码在项目根（无 src/）
+ * @returns {{ path: string, content: string }[]}
+ */
+export function taroAuthScaffold(opts) {
+  const o = opts || {}
+  const raw = typeof o.srcDir === 'string' ? o.srcDir : 'src'
+  const base = raw.replace(/\/+$/, '')
+  const p = (rest) => (base ? `${base}/${rest}` : rest)
+  return [
+    { path: p('lib/sso-login.ts'), content: TARO_SSO_LOGIN_TS },
+    { path: 'server/src/auth.ts', content: TARO_SERVER_AUTH_TS },
   ]
 }
 

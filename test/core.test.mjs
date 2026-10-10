@@ -102,3 +102,40 @@ test('dbScaffold：生成 db.ts + migrations.ts（WAL/foreign_keys/user_version�
   assert.match(files[1].content, /user_version/)
   assert.match(files[1].content, /MIGRATIONS/)
 })
+
+test('taroAuthScaffold：生成 Taro 接线文件（客户端 + Hono 服务端）', async () => {
+  const { taroAuthScaffold } = await import('../src/index.mjs')
+  const files = taroAuthScaffold({ srcDir: 'src' })
+  assert.deepEqual(files.map((f) => f.path), ['src/lib/sso-login.ts', 'server/src/auth.ts'])
+  const client = files[0].content
+  assert.match(client, /createTaroLogin/)
+  assert.match(client, /createTaroApi/)
+  assert.match(client, /createWeappLogin/)
+  assert.match(client, /@hxym18\/auth\/taro/)
+  assert.match(client, /@hxym18\/env/)
+  assert.match(client, /Taro\.request/)
+  const server = files[1].content
+  assert.match(server, /createHonoAuthRoutes/)
+  assert.match(server, /@hxym18\/auth\/hono/)
+  assert.match(server, /weappVerify/)
+  assert.match(server, /resolveIdentity/)
+  assert.doesNotMatch(server, /501/)
+})
+
+test('taroAuthScaffold：无 src 目录时客户端基目录为空（服务端路径固定）', async () => {
+  const { taroAuthScaffold } = await import('../src/index.mjs')
+  assert.deepEqual(taroAuthScaffold({ srcDir: '' }).map((f) => f.path), ['lib/sso-login.ts', 'server/src/auth.ts'])
+})
+
+test('depsForCheck：合并 dependencies + devDependencies + peerDependencies（devDeps 不再漏检）', async () => {
+  const { depsForCheck, findPinProblems } = await import('../src/index.mjs')
+  const merged = depsForCheck({
+    dependencies: { '@hxym18/auth': 'github:everythingIsZero/auth#v0.3.3' },
+    devDependencies: { '@hxym18/pwa-kit': '^0.2.1' },
+    peerDependencies: { '@hxym18/env': '0.1.1' },
+  })
+  assert.deepEqual(findPinProblems(merged), [
+    { name: '@hxym18/pwa-kit', spec: '^0.2.1' },
+    { name: '@hxym18/env', spec: '0.1.1' },
+  ])
+})

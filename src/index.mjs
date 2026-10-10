@@ -4,8 +4,10 @@ export {
   pinSpec,
   isTagPin,
   findPinProblems,
+  depsForCheck,
   findLegacyRefs,
   authScaffold,
+  taroAuthScaffold,
   dbScaffold,
   checkBaseline,
 } from './core.mjs'
