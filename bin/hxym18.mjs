@@ -4,7 +4,7 @@
  *
  * 用法：
  *   hxym18 add <repo> [--write] [--dir <项目目录>]   解析最新 tag 并（可选）写入 package.json
- *   hxym18 check [dir]                                校验横切件接入（tag 锁版 / 旧包残留），可失败
+ *   hxym18 check [dir]                                校验横切件接入（tag 锁版 / 旧包残留 / 死依赖），可失败
  *   hxym18 init auth [--target next|taro] [--write] [--dir <目录>]  生成 auth 接入文件（缺省自动探测项目类型）
  *   hxym18 init db [--write] [--dir <项目根>]                      生成后端数据层骨架（落 <根>/server/src/）
  *   hxym18 list                                       列出已知共享包
