@@ -112,6 +112,23 @@ function cmdCheck(args) {
     (json.devDependencies || {})[LEGACY_AUTH_PACKAGE] ||
     (json.peerDependencies || {})[LEGACY_AUTH_PACKAGE]
   if (legacyDep) legacy.push(`package.json 依赖：${LEGACY_AUTH_PACKAGE}=${legacyDep}`)
+  // 声明了「可导入」的 @hxym18/* 却未 import（死依赖，nuantie env 曾漏网）——grep 失败时不判，避免误报。
+  const importable = new Set(Object.values(KNOWN_PACKAGES))
+  const unused = []
+  if (!grepFailed) {
+    for (const pkg of Object.keys(allDeps)) {
+      if (!importable.has(pkg)) continue
+      try {
+        execFileSync(
+          'grep',
+          ['-rlF', ...codeGlobs, '--exclude-dir=node_modules', '--exclude-dir=.next', '--exclude-dir=.git', '--exclude-dir=dist', pkg, dir],
+          { encoding: 'utf8' },
+        )
+      } catch (e) {
+        if (e && e.status === 1) unused.push(pkg)
+      }
+    }
+  }
   let bad = false
   if (problems.length) {
     bad = true
@@ -126,6 +143,11 @@ function cmdCheck(args) {
   if (grepFailed) {
     bad = true
     console.error(`✗ 旧包名残留扫描失败（grep 不可用或异常，${dir}）：不得视为通过`)
+  }
+  if (unused.length) {
+    bad = true
+    console.error(`✗ 声明了但未 import 的共享包（死依赖，${dir}）：`)
+    for (const p of unused) console.error(`  - ${p}（package.json 有，代码未引用；删依赖或接入）`)
   }
   // 版本基线（advisory，--strict 视为失败）
   const baselinePath = args.baseline || process.env.HXYM18_BASELINE
