@@ -1,6 +1,6 @@
 {
   "name": "@hxym18/cli",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "共享包接入 CLI：add（解析最新 tag 写依赖）· check（校验横切件接入）· init auth（生成接入文件）",
   "type": "module",
   "license": "MIT",
