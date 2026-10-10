@@ -14,7 +14,7 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { resolve, dirname } from 'node:path'
-import { KNOWN_PACKAGES, LEGACY_AUTH_PACKAGE, pinSpec, findPinProblems, depsForCheck, findLegacyRefs, authScaffold, taroAuthScaffold, dbScaffold, checkBaseline } from '../src/index.mjs'
+import { KNOWN_PACKAGES, LEGACY_AUTH_PACKAGE, pinSpec, findPinProblems, depsForCheck, unusedShared, findLegacyRefs, authScaffold, taroAuthScaffold, dbScaffold, checkBaseline } from '../src/index.mjs'
 
 function parseArgs(argv) {
   const out = { _: [], write: false, dir: null, baseline: null, strict: false, target: null }
@@ -113,22 +113,23 @@ function cmdCheck(args) {
     (json.peerDependencies || {})[LEGACY_AUTH_PACKAGE]
   if (legacyDep) legacy.push(`package.json 依赖：${LEGACY_AUTH_PACKAGE}=${legacyDep}`)
   // 声明了「可导入」的 @hxym18/* 却未 import（死依赖，nuantie env 曾漏网）——grep 失败时不判，避免误报。
-  const importable = new Set(Object.values(KNOWN_PACKAGES))
-  const unused = []
+  const present = []
   if (!grepFailed) {
-    for (const pkg of Object.keys(allDeps)) {
-      if (!importable.has(pkg)) continue
+    for (const pkg of Object.values(KNOWN_PACKAGES)) {
+      if (!(pkg in allDeps)) continue
       try {
         execFileSync(
           'grep',
           ['-rlF', ...codeGlobs, '--exclude-dir=node_modules', '--exclude-dir=.next', '--exclude-dir=.git', '--exclude-dir=dist', pkg, dir],
           { encoding: 'utf8' },
         )
-      } catch (e) {
-        if (e && e.status === 1) unused.push(pkg)
+        present.push(pkg)
+      } catch {
+        /* grep 无匹配（exit 1）→ 不计入 present */
       }
     }
   }
+  const unused = grepFailed ? [] : unusedShared(Object.keys(allDeps), present)
   let bad = false
   if (problems.length) {
     bad = true

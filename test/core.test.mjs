@@ -139,3 +139,10 @@ test('depsForCheck：合并 dependencies + devDependencies + peerDependencies（
     { name: '@hxym18/env', spec: '0.1.1' },
   ])
 })
+
+test('unusedShared：声明了可导入共享包却没出现 → 列出；cli 工具不算', async () => {
+  const { unusedShared } = await import('../src/index.mjs')
+  assert.deepEqual(unusedShared(['@hxym18/env', '@hxym18/auth', '@hxym18/cli'], ['@hxym18/auth']), ['@hxym18/env'])
+  assert.deepEqual(unusedShared(['@hxym18/env'], ['@hxym18/env']), [])
+  assert.deepEqual(unusedShared(['@hxym18/cli'], []), [], 'cli 是工具，不算死依赖')
+})

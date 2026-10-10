@@ -66,6 +66,19 @@ export function depsForCheck(json) {
   }
 }
 
+/**
+ * 找出「声明了可导入的 `@hxym18/*` 却未在代码出现」的包（死依赖）。
+ * 只判可导入的包（`KNOWN_PACKAGES`；`@hxym18/cli` 是工具，不在其中）。
+ * @param {string[]} declared 声明的包名
+ * @param {Iterable<string>} present 代码里出现的包名
+ * @returns {string[]}
+ */
+export function unusedShared(declared, present) {
+  const has = new Set(present || [])
+  const importable = new Set(Object.values(KNOWN_PACKAGES))
+  return (Array.isArray(declared) ? declared : []).filter((n) => importable.has(n) && !has.has(n))
+}
+
 /** 扫描源码里的旧包名残留 */
 export function findLegacyRefs(text) {
   const s = typeof text === 'string' ? text : ''

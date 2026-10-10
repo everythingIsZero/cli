@@ -5,6 +5,7 @@ export {
   isTagPin,
   findPinProblems,
   depsForCheck,
+  unusedShared,
   findLegacyRefs,
   authScaffold,
   taroAuthScaffold,

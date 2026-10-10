@@ -4,6 +4,16 @@
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-10-10
+
+### Changed
+
+- `check` 死依赖判定抽为纯函数 `unusedShared`（`core`），bin 复用。
+
+### Added
+
+- `check` **端到端测试**（真跑 bin：死依赖 / 未锁版 → `exit≠0`；正常 → `exit=0`）——门禁可失败有据。
+
 ## [0.3.1] - 2026-10-10
 
 ### Docs
