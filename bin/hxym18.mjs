@@ -15,7 +15,7 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { resolve, dirname } from 'node:path'
-import { KNOWN_PACKAGES, LEGACY_AUTH_PACKAGE, pinSpec, isTagPin, findPinProblems, depsForCheck, unusedShared, findLegacyRefs, authScaffold, taroAuthScaffold, dbScaffold, pwaScaffold, pwaDeclared, pwaCheckProblems, checkBaseline } from '../src/index.mjs'
+import { KNOWN_PACKAGES, LEGACY_AUTH_PACKAGE, pinSpec, isTagPin, findPinProblems, depsForCheck, unusedShared, findLegacyRefs, selfWrittenCoreEndpoints, authScaffold, taroAuthScaffold, dbScaffold, pwaScaffold, pwaDeclared, pwaCheckProblems, checkBaseline } from '../src/index.mjs'
 
 function parseArgs(argv) {
   const out = { _: [], write: false, dir: null, baseline: null, strict: false, target: null }
@@ -151,6 +151,44 @@ function cmdCheck(args) {
     bad = true
     console.error(`✗ 声明了但未 import 的共享包（死依赖，${dir}）：`)
     for (const p of unused) console.error(`  - ${p}（package.json 有，代码未引用；删依赖或接入）`)
+  }
+  // 自写 auth core 端点（I5/I14 半接入漂移）：站点只应「挂载 + resolveIdentity + 业务端点」。
+  // 路由文件路径 + handler 内容双扫；命中 core 端点（config/dev-login/...）即失败。
+  let coreEndpointHits = []
+  let endpointScanFailed = false
+  try {
+    const routeFiles = execFileSync(
+      'find',
+      [dir, '-type', 'f', '-path', '*/api/auth/*', '-not', '-path', '*/node_modules/*', '-not', '-path', '*/.next/*', '-not', '-path', '*/.git/*', '-not', '-path', '*/dist/*'],
+      { encoding: 'utf8' },
+    )
+      .split('\n')
+      .filter(Boolean)
+    let handlerLines = []
+    try {
+      handlerLines = execFileSync(
+        'grep',
+        ['-rnE', '/api/auth/', ...codeGlobs, '--exclude-dir=node_modules', '--exclude-dir=.next', '--exclude-dir=.git', '--exclude-dir=dist', dir],
+        { encoding: 'utf8' },
+      )
+        .split('\n')
+        .filter(Boolean)
+    } catch (e) {
+      // 仅「无匹配（exit 1）」正常；其余异常向上抛 → 记为扫描失败。
+      if (!(e && e.status === 1)) throw e
+    }
+    coreEndpointHits = [...new Set(selfWrittenCoreEndpoints([...routeFiles, ...handlerLines]))]
+  } catch (e) {
+    endpointScanFailed = true
+  }
+  if (coreEndpointHits.length) {
+    bad = true
+    console.error(`✗ 自写 auth core 端点（${dir}）：core 端点由 @hxym18/auth 单源提供，站点只留「挂载 + resolveIdentity + 业务端点」`)
+    for (const h of coreEndpointHits) console.error(`  - ${h}`)
+  }
+  if (endpointScanFailed) {
+    bad = true
+    console.error(`✗ 自写 core 端点扫描失败（find/grep 不可用或异常，${dir}）：不得视为通过`)
   }
   // PWA 接入（init pwa 生成物）：不提交 sw.js + 有生成脚本 + pwa-kit tag 锁版。
   // 触发条件 = 声明 @hxym18/pwa-kit（声明即触发，命中「拷贝产物」失败模式）；默认 advisory，--strict 视为失败。

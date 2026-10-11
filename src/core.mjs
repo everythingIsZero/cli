@@ -86,6 +86,47 @@ export function findLegacyRefs(text) {
 }
 
 /**
+ * `@hxym18/auth` 共享核心端点（站点**不得自写**——由 core 单源提供，经挂载 + `resolveIdentity` 接入）。
+ * 站点自有业务端点（如 `me`/`session`/`device`）不在其中，不算漂移。
+ */
+export const CORE_AUTH_ENDPOINTS = Object.freeze([
+  'config',
+  'dev-login',
+  'sso-verify',
+  'wx-qrcode',
+  'wx-poll',
+  'weapp',
+  'logout',
+])
+
+// 匹配 `/api/auth/<segment>`（路径或 handler 串里均可；segment 不含 `/`、空白、引号、查询符）
+const AUTH_ENDPOINT_RE = /\/api\/auth\/([^/\s'"`?]+)/g
+
+/**
+ * 找出站点源码中**自写的 core 端点**（路由文件路径或 handler 串命中即报）。
+ * 端点白名单 = `CORE_AUTH_ENDPOINTS`；`/api/auth/[action]` 通配（挂载）与业务端点不报。
+ * @param {string[]} files 待扫串（文件路径或 `grep -rn` 输出行；路径与内容均被扫描）
+ * @returns {string[]} 命中的原始串（去重前，按输入顺序）
+ */
+export function selfWrittenCoreEndpoints(files) {
+  const list = Array.isArray(files) ? files : []
+  const core = new Set(CORE_AUTH_ENDPOINTS)
+  const hits = []
+  for (const f of list) {
+    const s = typeof f === 'string' ? f : ''
+    AUTH_ENDPOINT_RE.lastIndex = 0
+    let m
+    while ((m = AUTH_ENDPOINT_RE.exec(s)) !== null) {
+      if (core.has(m[1])) {
+        hits.push(s)
+        break
+      }
+    }
+  }
+  return hits
+}
+
+/**
  * 与版本基线比对共享包版本（未引入的包不报）。
  * @param {Record<string,string>} deps 项目 dependencies
  * @param {{ packages?: Record<string,string> } | null} baseline

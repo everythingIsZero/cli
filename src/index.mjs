@@ -7,6 +7,8 @@ export {
   depsForCheck,
   unusedShared,
   findLegacyRefs,
+  CORE_AUTH_ENDPOINTS,
+  selfWrittenCoreEndpoints,
   authScaffold,
   taroAuthScaffold,
   dbScaffold,

@@ -5,6 +5,8 @@ export function pinSpec(repo: string, tag: string): string
 export function isTagPin(spec: unknown): boolean
 export function findPinProblems(deps: Record<string, string>): { name: string; spec: string }[]
 export function findLegacyRefs(text: unknown): string[]
+export const CORE_AUTH_ENDPOINTS: readonly string[]
+export function selfWrittenCoreEndpoints(files: string[]): string[]
 export function depsForCheck(json: unknown): Record<string, string>
 export function unusedShared(declared: string[], present: Iterable<string>): string[]
 export function authScaffold(opts?: { srcDir?: string }): { path: string; content: string }[]

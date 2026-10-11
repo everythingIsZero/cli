@@ -9,6 +9,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
+import { selfWrittenCoreEndpoints } from '../src/index.mjs'
 
 const BIN = fileURLToPath(new URL('../bin/hxym18.mjs', import.meta.url))
 
@@ -91,6 +92,49 @@ test('check：无问题 → exit 0', () => {
     {
       'package.json': JSON.stringify({ dependencies: { '@hxym18/auth': 'github:everythingIsZero/auth#v0.6.1' } }),
       'src/a.ts': "import { isTicket } from '@hxym18/auth/core'\nexport const x = isTicket\n",
+    },
+    (dir) => {
+      const r = runCheck(dir)
+      assert.equal(r.code, 0, r.out)
+    },
+  )
+})
+
+test('selfWrittenCoreEndpoints：命中自写 config/dev-login 即报，业务端点 me 不报', () => {
+  const files = [
+    'src/app/api/auth/config/route.ts',
+    'src/app/api/auth/dev-login/route.ts',
+    'src/app/api/auth/me/route.ts',
+  ]
+  const hits = selfWrittenCoreEndpoints(files)
+  assert.ok(hits.some((h) => h.includes('config')))
+  assert.ok(hits.some((h) => h.includes('dev-login')))
+  assert.ok(!hits.some((h) => h.includes('me'))) // 业务端点不算
+})
+
+test('check：自写 core 端点（config）→ exit≠0', () => {
+  withProject(
+    {
+      'package.json': JSON.stringify({ dependencies: { '@hxym18/auth': 'github:everythingIsZero/auth#v0.6.1' } }),
+      'src/lib/auth-routes.ts': "import { createAuthRoutes } from '@hxym18/auth/next'\nexport const routes = createAuthRoutes({})\n",
+      'src/app/api/auth/[action]/route.ts': "import { routes } from '@/lib/auth-routes'\nexport const GET = routes.dispatch\n",
+      'src/app/api/auth/config/route.ts': 'export async function GET() { return new Response() }\n',
+    },
+    (dir) => {
+      const r = runCheck(dir)
+      assert.equal(r.code, 1, '自写 core 端点必须能失败')
+      assert.match(r.out, /自写 auth core 端点/)
+      assert.match(r.out, /config/)
+    },
+  )
+})
+
+test('check：仅业务端点（me）→ exit 0', () => {
+  withProject(
+    {
+      'package.json': JSON.stringify({ dependencies: { '@hxym18/auth': 'github:everythingIsZero/auth#v0.6.1' } }),
+      'src/a.ts': "import { isTicket } from '@hxym18/auth/core'\nexport const x = isTicket\n",
+      'src/app/api/auth/me/route.ts': 'export async function GET() { return new Response() }\n',
     },
     (dir) => {
       const r = runCheck(dir)
