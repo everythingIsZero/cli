@@ -4,6 +4,13 @@
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-11
+
+### Added
+
+- `init pwa`：生成 `sw.config.mjs` + `scripts/gen-sw.mjs`（构建期从 `@hxym18/pwa-kit/sw` 生成 `public/sw.js`，`sw.js` 不提交）。
+- `check` 的 pwa 判定：站点声明 `@hxym18/pwa-kit` 即触发（不得提交 `sw.js`、生成脚本存在且 import `@hxym18/pwa-kit/sw`、tag 锁版），默认 advisory，`--strict` 视为失败。
+
 ## [0.4.0] - 2026-10-11
 
 ### Changed
