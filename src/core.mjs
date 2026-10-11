@@ -330,11 +330,12 @@ export function dbScaffold(opts) {
 
 const SW_CONFIG_MJS = `/**
  * sw.config.mjs — Service Worker 生成配置（由 \`hxym18 init pwa\` 生成）。
- * version 取构建期 SW_VERSION（缺省 'dev'）；SW 默认不缓存，仅命中 rules 的路径按策略处理。
+ * version 取构建期 SW_VERSION；**空即由 buildSw 抛错**（不兜默认，部署边界用 \`test -n "$SW_VERSION"\` 拦）。
+ * SW 默认不缓存，仅命中 rules 的路径按策略处理。
  * 策略语义由 @hxym18/pwa-kit/sw 定义——本文件只给规则，不重复策略逻辑。
  */
 export default {
-  version: process.env.SW_VERSION || 'dev',
+  version: process.env.SW_VERSION || '',
   rules: [{ match: '/_next/static/', strategy: 'cache-first' }],
 }
 `
@@ -344,6 +345,7 @@ const GEN_SW_MJS = `/**
  *
  * 为什么生成而非手抄：安全修复走 minor 发版，站点升级依赖即可送达；sw.js 是构建产出，
  * **不提交**（.gitignore），因此不存在「已提交副本」漂移。
+ * version 取自 SW_VERSION / sw.config.mjs；**空即由 buildSw 抛错**（不兜 'dev'）。
  * 用法：node scripts/gen-sw.mjs [--stdout]
  */
 import { mkdirSync, writeFileSync } from 'node:fs'
@@ -354,7 +356,7 @@ import config from '../sw.config.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const out = resolve(here, '..', 'public', 'sw.js')
-const version = process.env.SW_VERSION || config.version || 'dev'
+const version = process.env.SW_VERSION || config.version
 const sw = buildSw({ ...config, version })
 
 if (process.argv.includes('--stdout')) {

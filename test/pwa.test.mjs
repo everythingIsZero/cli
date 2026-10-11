@@ -27,6 +27,13 @@ test('pwaScaffold：产出站点根相对路径 sw.config.mjs 与 scripts/gen-sw
   assert.ok(files.some((f) => f.path === 'sw.config.mjs'))
 })
 
+test('pwaScaffold：sw.config/gen-sw 不兜 "dev"——空 VERSION 交由 buildSw 抛错（F5/S7）', () => {
+  const byPath = Object.fromEntries(pwaScaffold().map((f) => [f.path, f.content]))
+  assert.match(byPath['sw.config.mjs'], /version: process\.env\.SW_VERSION \|\| ''/)
+  assert.doesNotMatch(byPath['sw.config.mjs'], /\|\| 'dev'/)
+  assert.doesNotMatch(byPath['scripts/gen-sw.mjs'], /\|\| 'dev'/)
+})
+
 test('pwaCheckProblems：提交 sw.js / 缺 gen 脚本 → 报问题；干净 → 空', () => {
   assert.equal(pwaCheckProblems({ hasCommittedSw: false, genScriptPresent: true, pinned: true }).length, 0)
   assert.ok(pwaCheckProblems({ hasCommittedSw: true, genScriptPresent: true, pinned: true }).length > 0)
