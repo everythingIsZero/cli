@@ -7,9 +7,9 @@
 
 ```bash
 # 一次性
-pnpm dlx github:everythingIsZero/cli#v0.5.1 <cmd>
+pnpm dlx github:everythingIsZero/cli#v0.5.2 <cmd>
 # 或本地安装
-pnpm add -D github:everythingIsZero/cli#v0.5.1
+pnpm add -D github:everythingIsZero/cli#v0.5.2
 npx hxym18 <cmd>
 ```
 

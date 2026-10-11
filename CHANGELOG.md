@@ -4,6 +4,16 @@
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-10-11
+
+### Changed
+
+- `init auth` **不再生成 `config` 路由**（端点单源，改由共享核心 `@hxym18/auth` 提供）；Taro/Hono 适配改为 `authRoutes.all('/api/auth/*', routes.dispatch)` **catch-all 末位**（站点自有 `/api/auth/*` 须先注册）。
+
+### Added
+
+- `check` 扫描**自写 core 端点**：命中 `config`/`dev-login`/`sso-verify`/`wx-qrcode`/`wx-poll`/`weapp`/`logout` 的**路由文件或路由定义行**即 `exit≠0`（端点单源）；**排除注释行与测试文件**（`/test(s)/`、`.test.`、`.spec.`），业务端点与 `[action]` 通配不报。
+
 ## [0.5.1] - 2026-10-11
 
 ### Fixed
