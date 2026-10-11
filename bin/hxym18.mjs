@@ -7,6 +7,7 @@
  *   hxym18 check [dir]                                校验横切件接入（tag 锁版 / 旧包残留 / 死依赖），可失败
  *   hxym18 init auth [--target next|taro] [--write] [--dir <目录>]  生成 auth 接入文件（缺省自动探测项目类型）
  *   hxym18 init db [--write] [--dir <项目根>]                      生成后端数据层骨架（落 <根>/server/src/）
+ *   hxym18 init pwa [--write] [--dir <站点根>]                     生成 PWA 接入文件（sw.config.mjs + scripts/gen-sw.mjs）
  *   hxym18 list                                       列出已知共享包
  *
  * 退出码：check 有问题 → 1；其余 0（打印类命令失败 → 1）。
@@ -14,7 +15,7 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { resolve, dirname } from 'node:path'
-import { KNOWN_PACKAGES, LEGACY_AUTH_PACKAGE, pinSpec, findPinProblems, depsForCheck, unusedShared, findLegacyRefs, authScaffold, taroAuthScaffold, dbScaffold, checkBaseline } from '../src/index.mjs'
+import { KNOWN_PACKAGES, LEGACY_AUTH_PACKAGE, pinSpec, isTagPin, findPinProblems, depsForCheck, unusedShared, findLegacyRefs, authScaffold, taroAuthScaffold, dbScaffold, pwaScaffold, pwaCheckProblems, checkBaseline } from '../src/index.mjs'
 
 function parseArgs(argv) {
   const out = { _: [], write: false, dir: null, baseline: null, strict: false, target: null }
@@ -151,6 +152,29 @@ function cmdCheck(args) {
     console.error(`✗ 声明了但未 import 的共享包（死依赖，${dir}）：`)
     for (const p of unused) console.error(`  - ${p}（package.json 有，代码未引用；删依赖或接入）`)
   }
+  // PWA 站点接入（init pwa 生成物）：不提交 sw.js + 有生成脚本 + pwa-kit tag 锁版。
+  // 只在站点出现 PWA 接入标记时判定，避免对未接入项目误报。
+  const isPwaSite = existsSync(resolve(dir, 'sw.config.mjs')) || existsSync(resolve(dir, 'scripts/gen-sw.mjs'))
+  if (isPwaSite) {
+    const genScriptPresent = existsSync(resolve(dir, 'scripts/gen-sw.mjs'))
+    let hasCommittedSw = false
+    try {
+      const tracked = execFileSync('git', ['-C', dir, 'ls-files', '--', 'public/sw.js'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
+      hasCommittedSw = tracked.length > 0
+    } catch (e) {
+      // 非 git 仓库 / git 不可用：无法判定是否提交 → 视为未提交，避免误报。
+    }
+    const pwaProblems = pwaCheckProblems({
+      hasCommittedSw,
+      genScriptPresent,
+      pinned: isTagPin(allDeps['@hxym18/pwa-kit']),
+    })
+    if (pwaProblems.length) {
+      bad = true
+      console.error(`✗ PWA 接入问题（${dir}）：`)
+      for (const p of pwaProblems) console.error(`  - ${p}`)
+    }
+  }
   // 版本基线（advisory，--strict 视为失败）
   const baselinePath = args.baseline || process.env.HXYM18_BASELINE
   if (baselinePath) {
@@ -254,6 +278,17 @@ function cmdInitDb(args) {
   )
 }
 
+function cmdInitPwa(args) {
+  // --dir = 站点根；生成 sw.config.mjs + scripts/gen-sw.mjs（站点根相对路径）
+  const dir = args.dir || '.'
+  return applyScaffold(
+    pwaScaffold(),
+    dir,
+    args.write,
+    '另需：package.json 加 @hxym18/pwa-kit（hxym18 add pwa-kit --write）；build 前置 SW_VERSION=${SW_VERSION:-$(git rev-parse --short HEAD)} node scripts/gen-sw.mjs；.gitignore 忽略 public/sw.js（sw.js 为构建产出，不提交）。',
+  )
+}
+
 function cmdInitStats(args) {
   const dir = args.dir || '.'
   console.log(`stats（业务统计只读出口）接入清单（${dir}）：`)
@@ -275,11 +310,12 @@ function main() {
       const sub = args._[1]
       if (sub === 'auth') return cmdInitAuth(args)
       if (sub === 'db') return cmdInitDb(args)
+      if (sub === 'pwa') return cmdInitPwa(args)
       if (sub === 'stats') return cmdInitStats(args)
-      console.error('init 支持：auth | db | stats')
+      console.error('init 支持：auth | db | pwa | stats')
       return 1
     }
-    console.error('用法：hxym18 <add|check|init auth|init db|init stats|list> ...')
+    console.error('用法：hxym18 <add|check|init auth|init db|init pwa|init stats|list> ...')
     return 1
   } catch (e) {
     console.error(`hxym18: ${(e && e.message) || e}`)

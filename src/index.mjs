@@ -10,5 +10,7 @@ export {
   authScaffold,
   taroAuthScaffold,
   dbScaffold,
+  pwaScaffold,
+  pwaCheckProblems,
   checkBaseline,
 } from './core.mjs'

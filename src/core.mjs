@@ -327,3 +327,74 @@ export function dbScaffold(opts) {
     { path: p('migrations.ts'), content: MIGRATIONS_TS },
   ]
 }
+
+const SW_CONFIG_MJS = `/**
+ * sw.config.mjs — Service Worker 生成配置（由 \`hxym18 init pwa\` 生成）。
+ * version 取构建期 SW_VERSION（缺省 'dev'）；SW 默认不缓存，仅命中 rules 的路径按策略处理。
+ * 策略语义由 @hxym18/pwa-kit/sw 定义——本文件只给规则，不重复策略逻辑。
+ */
+export default {
+  version: process.env.SW_VERSION || 'dev',
+  rules: [{ match: '/_next/static/', strategy: 'cache-first' }],
+}
+`
+
+const GEN_SW_MJS = `/**
+ * gen-sw.mjs — 构建期从 @hxym18/pwa-kit/sw 生成 public/sw.js（由 \`hxym18 init pwa\` 生成）。
+ *
+ * 为什么生成而非手抄：安全修复走 minor 发版，站点升级依赖即可送达；sw.js 是构建产出，
+ * **不提交**（.gitignore），因此不存在「已提交副本」漂移。
+ * 用法：node scripts/gen-sw.mjs [--stdout]
+ */
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { buildSw } from '@hxym18/pwa-kit/sw'
+import config from '../sw.config.mjs'
+
+const here = dirname(fileURLToPath(import.meta.url))
+const out = resolve(here, '..', 'public', 'sw.js')
+const version = process.env.SW_VERSION || config.version || 'dev'
+const sw = buildSw({ ...config, version })
+
+if (process.argv.includes('--stdout')) {
+  process.stdout.write(sw)
+} else {
+  mkdirSync(dirname(out), { recursive: true })
+  writeFileSync(out, sw)
+  console.log('已生成 ' + out + '（version=' + version + '）')
+}
+`
+
+/**
+ * 生成 PWA 接入文件（Next 站点）。
+ * 返回**站点根相对路径**（与 authScaffold/dbScaffold 同约定）；由 cmdInitPwa 调 applyScaffold 落盘。
+ * @returns {{ path: string, content: string }[]}
+ */
+export function pwaScaffold() {
+  return [
+    { path: 'sw.config.mjs', content: SW_CONFIG_MJS },
+    { path: 'scripts/gen-sw.mjs', content: GEN_SW_MJS },
+  ]
+}
+
+/**
+ * 判定 PWA 站点接入问题（默认模式：不提交 sw.js + 有生成脚本 + pwa-kit tag 锁版）。
+ * 不做 swDriftProblems：默认不提交 sw.js，无漂移比对对象。
+ * @param {{ hasCommittedSw: boolean, genScriptPresent: boolean, pinned: boolean }} input
+ * @returns {string[]}
+ */
+export function pwaCheckProblems(input) {
+  const i = input || {}
+  const problems = []
+  if (i.hasCommittedSw) {
+    problems.push('提交了 public/sw.js：SW 是构建产出（scripts/gen-sw.mjs 生成），请从版本库移除并加入 .gitignore')
+  }
+  if (!i.genScriptPresent) {
+    problems.push('缺少 scripts/gen-sw.mjs：站点须在构建期从 @hxym18/pwa-kit/sw 生成 sw.js（hxym18 init pwa --write）')
+  }
+  if (!i.pinned) {
+    problems.push('@hxym18/pwa-kit 未 tag 锁版：须 github:everythingIsZero/pwa-kit#v<semver>（hxym18 add pwa-kit --write）')
+  }
+  return problems
+}

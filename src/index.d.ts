@@ -10,6 +10,12 @@ export function unusedShared(declared: string[], present: Iterable<string>): str
 export function authScaffold(opts?: { srcDir?: string }): { path: string; content: string }[]
 export function taroAuthScaffold(opts?: { srcDir?: string }): { path: string; content: string }[]
 export function dbScaffold(opts?: { dir?: string }): { path: string; content: string }[]
+export function pwaScaffold(): { path: string; content: string }[]
+export function pwaCheckProblems(input: {
+  hasCommittedSw: boolean
+  genScriptPresent: boolean
+  pinned: boolean
+}): string[]
 export function checkBaseline(
   deps: Record<string, string>,
   baseline: { packages?: Record<string, string> } | null,
