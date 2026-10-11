@@ -14,9 +14,11 @@ export function taroAuthScaffold(opts?: { srcDir?: string }): { path: string; co
 export function dbScaffold(opts?: { dir?: string }): { path: string; content: string }[]
 export function pwaScaffold(): { path: string; content: string }[]
 export function pwaDeclared(deps: Record<string, string>): boolean
+export function genScriptImportsPwaKit(content: unknown): boolean
 export function pwaCheckProblems(input: {
   hasCommittedSw: boolean
   genScriptPresent: boolean
+  genScriptImportsPwaKit?: boolean
   pinned: boolean
 }): string[]
 export function checkBaseline(

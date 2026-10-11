@@ -15,5 +15,6 @@ export {
   pwaScaffold,
   pwaDeclared,
   pwaCheckProblems,
+  genScriptImportsPwaKit,
   checkBaseline,
 } from './core.mjs'

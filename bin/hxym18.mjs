@@ -15,7 +15,7 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { resolve, dirname } from 'node:path'
-import { KNOWN_PACKAGES, LEGACY_AUTH_PACKAGE, pinSpec, isTagPin, findPinProblems, depsForCheck, unusedShared, findLegacyRefs, selfWrittenCoreEndpoints, authScaffold, taroAuthScaffold, dbScaffold, pwaScaffold, pwaDeclared, pwaCheckProblems, checkBaseline } from '../src/index.mjs'
+import { KNOWN_PACKAGES, LEGACY_AUTH_PACKAGE, pinSpec, isTagPin, findPinProblems, depsForCheck, unusedShared, findLegacyRefs, selfWrittenCoreEndpoints, authScaffold, taroAuthScaffold, dbScaffold, pwaScaffold, pwaDeclared, pwaCheckProblems, genScriptImportsPwaKit, checkBaseline } from '../src/index.mjs'
 
 function parseArgs(argv) {
   const out = { _: [], write: false, dir: null, baseline: null, strict: false, target: null }
@@ -190,10 +190,20 @@ function cmdCheck(args) {
     bad = true
     console.error(`✗ 自写 core 端点扫描失败（find/grep 不可用或异常，${dir}）：不得视为通过`)
   }
-  // PWA 接入（init pwa 生成物）：不提交 sw.js + 有生成脚本 + pwa-kit tag 锁版。
+  // PWA 接入（init pwa 生成物）：不提交 sw.js + 有生成脚本且 import @hxym18/pwa-kit/sw + pwa-kit tag 锁版。
   // 触发条件 = 声明 @hxym18/pwa-kit（声明即触发，命中「拷贝产物」失败模式）；默认 advisory，--strict 视为失败。
   if (pwaDeclared(allDeps)) {
-    const genScriptPresent = existsSync(resolve(dir, 'scripts/gen-sw.mjs'))
+    const genScriptPath = resolve(dir, 'scripts/gen-sw.mjs')
+    const genScriptPresent = existsSync(genScriptPath)
+    // gen-sw.mjs 存在还不够（S7）：须 import @hxym18/pwa-kit/sw（自写死 SW 会与安全修复漂移）。
+    let genScriptImports = false
+    if (genScriptPresent) {
+      try {
+        genScriptImports = genScriptImportsPwaKit(readFileSync(genScriptPath, 'utf8'))
+      } catch (e) {
+        // 读失败视为未 import → 报问题（不得静默视为通过）
+      }
+    }
     let hasCommittedSw = false
     try {
       const tracked = execFileSync('git', ['-C', dir, 'ls-files', '--', 'public/sw.js'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
@@ -204,6 +214,7 @@ function cmdCheck(args) {
     const pwaProblems = pwaCheckProblems({
       hasCommittedSw,
       genScriptPresent,
+      genScriptImportsPwaKit: genScriptImports,
       pinned: isTagPin(allDeps['@hxym18/pwa-kit']),
     })
     if (pwaProblems.length) {

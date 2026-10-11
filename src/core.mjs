@@ -438,9 +438,23 @@ export function pwaDeclared(deps) {
 }
 
 /**
- * 判定 PWA 站点接入问题（默认模式：不提交 sw.js + 有生成脚本 + pwa-kit tag 锁版）。
+ * 判 `gen-sw.mjs` 内容是否 import 共享包入口 `@hxym18/pwa-kit/sw`。
+ * import / require / 动态 import 形态均可（统一为字符串字面量中的包路径）；
+ * 非字符串内容（未提供）视为否。
+ * @param {unknown} content gen-sw.mjs 内容
+ * @returns {boolean}
+ */
+export function genScriptImportsPwaKit(content) {
+  const s = typeof content === 'string' ? content : ''
+  return /['"`]@hxym18\/pwa-kit\/sw['"`]/.test(s)
+}
+
+/**
+ * 判定 PWA 站点接入问题（默认模式：不提交 sw.js + 有生成脚本且 import 共享包 + pwa-kit tag 锁版）。
+ * `gen-sw.mjs` 存在但不 import `@hxym18/pwa-kit/sw`（自写死 SW）同样报问题——
+ * 否则安全修复走 minor 发版无法送达该站（spec §S7）。
  * 不做 swDriftProblems：默认不提交 sw.js，无漂移比对对象。
- * @param {{ hasCommittedSw: boolean, genScriptPresent: boolean, pinned: boolean }} input
+ * @param {{ hasCommittedSw: boolean, genScriptPresent: boolean, genScriptImportsPwaKit?: boolean, pinned: boolean }} input
  * @returns {string[]}
  */
 export function pwaCheckProblems(input) {
@@ -451,6 +465,8 @@ export function pwaCheckProblems(input) {
   }
   if (!i.genScriptPresent) {
     problems.push('缺少 scripts/gen-sw.mjs：站点须在构建期从 @hxym18/pwa-kit/sw 生成 sw.js（hxym18 init pwa --write）')
+  } else if (!i.genScriptImportsPwaKit) {
+    problems.push('scripts/gen-sw.mjs 未 import @hxym18/pwa-kit/sw：SW 须由共享包生成，自写 SW 会与安全修复漂移（hxym18 init pwa --write）')
   }
   if (!i.pinned) {
     problems.push('@hxym18/pwa-kit 未 tag 锁版：须 github:everythingIsZero/pwa-kit#v<semver>（hxym18 add pwa-kit --write）')
