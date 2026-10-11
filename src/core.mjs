@@ -170,18 +170,20 @@ const TARO_SSO_LOGIN_TS = `/**
  */
 import Taro from '@tarojs/taro'
 import { capabilities } from '@hxym18/env'
+import { loginCapsFromCapabilities } from '@hxym18/auth/core'
 import { createTaroLogin, createTaroApi, createWeappLogin } from '@hxym18/auth/taro'
 
-const isH5 = process.env.TARO_ENV === 'h5'
 const nav = typeof navigator !== 'undefined' ? navigator : undefined
 
 export const login = createTaroLogin({
-  isH5,
-  // 能力位单一来源 @hxym18/env；漏传会按 PC 处理（漏终端）
-  caps: capabilities({
-    ua: (isH5 && nav && nav.userAgent) || '',
-    maxTouchPoints: (isH5 && nav && nav.maxTouchPoints) || 0,
-  }),
+  // 终端由「有无 window」判定，无需手传 isH5
+  // 能力位单一来源 @hxym18/env，经 loginCapsFromCapabilities 投影（勿整体透传 capabilities()）
+  caps: loginCapsFromCapabilities(
+    capabilities({
+      ua: (nav && nav.userAgent) || '',
+      maxTouchPoints: (nav && nav.maxTouchPoints) || 0,
+    }),
+  ),
   // 小程序无标准 fetch：注入 Taro.request，不必手写 config/qrcode/poll/verify/devLogin
   api: createTaroApi({
     request: (opts) => Taro.request(opts as any),

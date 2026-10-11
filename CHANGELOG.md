@@ -4,6 +4,14 @@
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-11
+
+### Changed
+
+- `init auth --target taro` 生成的客户端接线改用 `@hxym18/auth/core` 的 `loginCapsFromCapabilities()` 投影
+  env 能力位（此前整体透传 `capabilities()`，会把桌面微信送进 OAuth 死路），并去掉手传的 `isH5`
+  （终端改由「有无 window」判定）。**生成的接线要求 `@hxym18/auth ≥ v0.7.0`。**
+
 ## [0.3.3] - 2026-10-10
 
 ### Fixed
