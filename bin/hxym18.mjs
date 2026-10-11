@@ -263,7 +263,7 @@ function cmdInitAuth(args) {
       taroAuthScaffold({ srcDir }),
       dir,
       args.write,
-      '另需：package.json 加 @hxym18/auth + @hxym18/env（hxym18 add auth --write / hxym18 add env --write）。客户端接线 + Hono 服务端装配已生成；只补 server/src/auth.ts 的 resolveIdentity（唯一业务回调）。',
+      '另需：package.json 加 @hxym18/auth + @hxym18/env（hxym18 add auth --write / hxym18 add env --write）。客户端接线 + Hono 服务端装配已生成；只补 server/src/auth.ts 的 resolveIdentity（唯一业务回调）。挂载时**先注册站点自有 /api/auth/* 端点，最后 app.route(\'/\', authRoutes)**（catch-all 末位，避免吞站点端点）。',
     )
   }
   console.error(`hxym18: 未知 --target「${target}」，支持 next | taro。`)

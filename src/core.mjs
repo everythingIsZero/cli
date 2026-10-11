@@ -126,7 +126,7 @@ export const routes = createAuthRoutes({
 })
 `
 
-const AUTH_ACTION_ROUTE_TS = `/** /api/auth/<action> 通配（sso-verify | wx-qrcode | wx-poll | weapp | logout） */
+const AUTH_ACTION_ROUTE_TS = `/** /api/auth/<action> 通配（sso-verify | wx-qrcode | wx-poll | weapp | logout | config | dev-login，全部单源） */
 import { routes } from '@/lib/auth-routes'
 
 export const dynamic = 'force-dynamic'
@@ -134,20 +134,10 @@ export const GET = routes.dispatch
 export const POST = routes.dispatch
 `
 
-const AUTH_CONFIG_ROUTE_TS = `/** 登录页能力探测（wxEnabled / devLogin） */
-import { NextResponse } from 'next/server'
-import { routes } from '@/lib/auth-routes'
-
-export const dynamic = 'force-dynamic'
-
-export async function GET() {
-  const devLogin = process.env.AUTH_DEV_LOGIN === '1' || process.env.AUTH_DEV_LOGIN === 'true'
-  return NextResponse.json({ ok: true, wxEnabled: routes.wxConfigured(), devLogin })
-}
-`
-
 /**
  * 生成 auth 接入文件（Next App Router）。
+ * 只生成「挂载 + resolveIdentity」：`[action]` 通配把 /api/auth/* 全量交给共享核心，
+ * 不再产出单独的 config 路由（端点单源，避免自写端点漂移；pitfalls I14）。
  * @param {{ srcDir?: string }} [opts] srcDir 为空串则视 app 在项目根（无 src/）
  * @returns {{ path: string, content: string }[]}
  */
@@ -159,7 +149,6 @@ export function authScaffold(opts) {
   return [
     { path: p('lib/auth-routes.ts'), content: AUTH_ROUTES_TS },
     { path: p('app/api/auth/[action]/route.ts'), content: AUTH_ACTION_ROUTE_TS },
-    { path: p('app/api/auth/config/route.ts'), content: AUTH_CONFIG_ROUTE_TS },
   ]
 }
 
@@ -218,7 +207,7 @@ export const weappLogin = createWeappLogin({
 const TARO_SERVER_AUTH_TS = `/**
  * auth.ts — Hono 服务端 auth 装配（由 \`hxym18 init auth --target taro\` 生成）。
  * 分工：统一层认人，本站用人——你只需补 resolveIdentity（openid/unionid → 本站 user）。
- * 挂载：const app = new Hono(); app.route('/', authRoutes)
+ * 挂载：**先**注册站点自有 /api/auth/* 端点，**最后** \`app.route('/', authRoutes)\`（catch-all 末位）。
  */
 import { Hono } from 'hono'
 import { createHonoAuthRoutes } from '@hxym18/auth/hono'
@@ -238,16 +227,13 @@ const routes = createHonoAuthRoutes({
   },
 })
 
-authRoutes.post('/api/auth/sso-verify', (c) => routes.ssoVerify(c))
-authRoutes.get('/api/auth/wx-qrcode', (c) => routes.wxQrcode(c))
-authRoutes.get('/api/auth/wx-poll', (c) => routes.wxPoll(c))
-authRoutes.post('/api/auth/logout', (c) => routes.logout(c))
-authRoutes.get('/api/auth/config', (c) =>
-  c.json({ ok: true, wxEnabled: routes.wxConfigured(), devLogin: process.env.AUTH_DEV_LOGIN === '1' }),
-)
-
-/** 微信小程序登录：Taro.login code → 共享核心换码+锚定+签 token（复用 resolveIdentity，站点无需再写） */
-authRoutes.post('/api/auth/weapp', (c) => routes.weappVerify(c))
+// 共享核心端点（sso-verify | wx-qrcode | wx-poll | weapp | logout | config | dev-login）单源分发——
+// 逐条枚举会与核心漂移（端点单源破裂，pitfalls I14），故只留这一个通配。
+// **catch-all 末位**：站点自有 /api/auth/*（如 session/device）必须在本文件之前注册，
+// 否则被本 catch-all 吞掉（pitfalls I15）。挂载示例：
+//   app.post('/api/auth/session', ...)   // 站点端点先注册
+//   app.route('/', authRoutes)           // 共享 auth 最后挂
+authRoutes.all('/api/auth/*', (c) => routes.dispatch(c))
 `
 
 /**

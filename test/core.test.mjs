@@ -52,20 +52,25 @@ test('authScaffold：生成 auth 接入文件（含 src 基目录）', async () 
   assert.deepEqual(paths, [
     'src/lib/auth-routes.ts',
     'src/app/api/auth/[action]/route.ts',
-    'src/app/api/auth/config/route.ts',
   ])
   const byPath = Object.fromEntries(files.map((f) => [f.path, f.content]))
   assert.match(byPath['src/lib/auth-routes.ts'], /createAuthRoutes/)
   assert.match(byPath['src/lib/auth-routes.ts'], /@hxym18\/auth\/next/)
   assert.match(byPath['src/app/api/auth/[action]/route.ts'], /routes\.dispatch/)
-  assert.match(byPath['src/app/api/auth/config/route.ts'], /wxConfigured/)
+})
+
+test('authScaffold：不产出 config 路由（端点单源，I14）', async () => {
+  const { authScaffold } = await import('../src/index.mjs')
+  const files = authScaffold({ srcDir: 'src' })
+  assert.ok(!files.some((f) => f.path.includes('auth/config')))
+  assert.ok(files.some((f) => f.path.includes('api/auth/[action]')))
 })
 
 test('authScaffold：无 src 目录时基目录为空', async () => {
   const { authScaffold } = await import('../src/index.mjs')
   const paths = authScaffold({ srcDir: '' }).map((f) => f.path)
-  assert.ok(paths.includes('lib/auth-routes.ts'))
-  assert.ok(paths.includes('app/api/auth/[action]/route.ts'))
+  assert.deepEqual(paths, ['lib/auth-routes.ts', 'app/api/auth/[action]/route.ts'])
+  assert.ok(!paths.some((p) => p.includes('auth/config')))
 })
 
 test('checkBaseline：与基线的共享包版本不一致即列出（未引入的不报）', async () => {
@@ -117,8 +122,10 @@ test('taroAuthScaffold：生成 Taro 接线文件（客户端 + Hono 服务端�
   const server = files[1].content
   assert.match(server, /createHonoAuthRoutes/)
   assert.match(server, /@hxym18\/auth\/hono/)
-  assert.match(server, /weappVerify/)
   assert.match(server, /resolveIdentity/)
+  assert.match(server, /authRoutes\.all\('\/api\/auth\/\*'/)   // catch-all 末位
+  assert.match(server, /routes\.dispatch/)
+  assert.doesNotMatch(server, /weappVerify/)                    // 不再逐条枚举
   assert.doesNotMatch(server, /501/)
 })
 
