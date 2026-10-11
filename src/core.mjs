@@ -99,14 +99,26 @@ export const CORE_AUTH_ENDPOINTS = Object.freeze([
   'logout',
 ])
 
-// 匹配 `/api/auth/<segment>`（路径或 handler 串里均可；segment 不含 `/`、空白、引号、查询符）
-const AUTH_ENDPOINT_RE = /\/api\/auth\/([^/\s'"`?]+)/g
+// Next 路由文件：`**/api/auth/<core>/route.{ts,js,tsx,jsx,mjs}`
+const NEXT_ROUTE_RE = /\/api\/auth\/([^/\s'"`?]+)\/route\.(?:ts|js|tsx|jsx|mjs)$/
+// 路由定义行：`.get|.post|.put|.delete|.all|.use|.route(` 后紧跟引号内的 `/api/auth/<core>`（Hono/Express）
+const ROUTE_DEF_RE = /\.(?:get|post|put|delete|all|use|route)\(\s*['"`]\/api\/auth\/([^/\s'"`?]+)/
+// 行首注释（`//` / `/*` / `*`）
+const COMMENT_LINE_RE = /^\s*(?:\/\/|\/\*|\*)/
+// 测试文件路径（排除）
+const TEST_PATH_RE = /(?:\/tests?\/|\.test\.|\.spec\.)/
+// `grep -rn` 输出行：`path:lineno:content`
+const GREP_LINE_RE = /^([^:]+):(\d+):([\s\S]*)$/
 
 /**
- * 找出站点源码中**自写的 core 端点**（路由文件路径或 handler 串命中即报）。
- * 端点白名单 = `CORE_AUTH_ENDPOINTS`；`/api/auth/[action]` 通配（挂载）与业务端点不报。
- * @param {string[]} files 待扫串（文件路径或 `grep -rn` 输出行；路径与内容均被扫描）
- * @returns {string[]} 命中的原始串（去重前，按输入顺序）
+ * 找出站点源码中**自写的 core 端点**（只认路由定义，不认字样提及）。
+ * 判定：
+ *   1. Next 路由文件路径 `**\/api/auth/<core>/route.{ts,js,tsx,jsx,mjs}`；或
+ *   2. 路由定义行 `.get|.post|.put|.delete|.all|.use|.route(` 紧跟引号内 `/api/auth/<core>`。
+ * 排除：行首注释（`//`、`/*`、`*`）、测试文件（`/test(s)/`、`.test.`、`.spec.`）；
+ * 业务端点（`me`/`session`/`device`）与 `[action]` 通配不在白名单。
+ * @param {string[]} files 待扫串（文件路径或 `grep -rn` 输出行 `path:lineno:content`）
+ * @returns {string[]} 命中的原始串（按输入顺序）
  */
 export function selfWrittenCoreEndpoints(files) {
   const list = Array.isArray(files) ? files : []
@@ -114,14 +126,21 @@ export function selfWrittenCoreEndpoints(files) {
   const hits = []
   for (const f of list) {
     const s = typeof f === 'string' ? f : ''
-    AUTH_ENDPOINT_RE.lastIndex = 0
-    let m
-    while ((m = AUTH_ENDPOINT_RE.exec(s)) !== null) {
-      if (core.has(m[1])) {
-        hits.push(s)
-        break
-      }
+    if (!s) continue
+    const gm = GREP_LINE_RE.exec(s)
+    const path = gm ? gm[1] : s
+    const content = gm ? gm[3] : s
+    if (TEST_PATH_RE.test(path)) continue
+    // 1. Next 路由文件（路径即定义，内容无关）
+    const fileMatch = NEXT_ROUTE_RE.exec(path)
+    if (fileMatch && core.has(fileMatch[1])) {
+      hits.push(s)
+      continue
     }
+    // 2. 路由定义行（排除注释行）
+    if (COMMENT_LINE_RE.test(content)) continue
+    const defMatch = ROUTE_DEF_RE.exec(content)
+    if (defMatch && core.has(defMatch[1])) hits.push(s)
   }
   return hits
 }

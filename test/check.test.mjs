@@ -100,7 +100,7 @@ test('check：无问题 → exit 0', () => {
   )
 })
 
-test('selfWrittenCoreEndpoints：命中自写 config/dev-login 即报，业务端点 me 不报', () => {
+test('selfWrittenCoreEndpoints：路由文件路径命中 core 端点，业务端点不报', () => {
   const files = [
     'src/app/api/auth/config/route.ts',
     'src/app/api/auth/dev-login/route.ts',
@@ -110,6 +110,27 @@ test('selfWrittenCoreEndpoints：命中自写 config/dev-login 即报，业务�
   assert.ok(hits.some((h) => h.includes('config')))
   assert.ok(hits.some((h) => h.includes('dev-login')))
   assert.ok(!hits.some((h) => h.includes('me'))) // 业务端点不算
+})
+
+test('selfWrittenCoreEndpoints：只认路由定义行；注释/测试/业务端点不报', () => {
+  const entries = [
+    // 真阳性：路由定义行
+    "server/src/routes/auth.ts:12:authRoutes.get('/api/auth/config', (c) => routes.config(c))",
+    "server/src/routes/auth.ts:13:authRoutes.post('/api/auth/weapp', (c) => routes.weappVerify(c))",
+    // 假阳性排除：注释行
+    'server/src/services/identity.ts:259:  // 调 /api/auth/config 拿能力位',
+    'server/src/services/identity.ts:260: * /api/auth/dev-login 同上',
+    // 假阳性排除：测试文件
+    "server/tests/weapp-auth.test.ts:35:  await fetch('/api/auth/weapp')",
+    // 业务端点
+    "server/src/routes/auth.ts:40:authRoutes.post('/api/auth/session', (c) => site(c))",
+  ]
+  const hits = selfWrittenCoreEndpoints(entries)
+  assert.ok(hits.some((h) => h.includes("'/api/auth/config'")))
+  assert.ok(hits.some((h) => h.includes("'/api/auth/weapp'")))
+  assert.ok(!hits.some((h) => h.includes('identity.ts'))) // 注释不算
+  assert.ok(!hits.some((h) => h.includes('weapp-auth.test.ts'))) // 测试不算
+  assert.ok(!hits.some((h) => h.includes("'/api/auth/session'"))) // 业务端点不算
 })
 
 test('check：自写 core 端点（config）→ exit≠0', () => {
@@ -135,6 +156,21 @@ test('check：仅业务端点（me）→ exit 0', () => {
       'package.json': JSON.stringify({ dependencies: { '@hxym18/auth': 'github:everythingIsZero/auth#v0.6.1' } }),
       'src/a.ts': "import { isTicket } from '@hxym18/auth/core'\nexport const x = isTicket\n",
       'src/app/api/auth/me/route.ts': 'export async function GET() { return new Response() }\n',
+    },
+    (dir) => {
+      const r = runCheck(dir)
+      assert.equal(r.code, 0, r.out)
+    },
+  )
+})
+
+test('check：注释/测试文件提及 core 端点 → exit 0（不误报）', () => {
+  withProject(
+    {
+      'package.json': JSON.stringify({ dependencies: { '@hxym18/auth': 'github:everythingIsZero/auth#v0.6.1' } }),
+      'src/a.ts': "import { isTicket } from '@hxym18/auth/core'\nexport const x = isTicket\n",
+      'src/services/identity.ts': '// 调 /api/auth/config 拿能力位\nexport const y = 1\n',
+      'server/tests/weapp-auth.test.ts': "test('x', () => fetch('/api/auth/weapp'))\n",
     },
     (dir) => {
       const r = runCheck(dir)
