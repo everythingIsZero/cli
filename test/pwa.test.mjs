@@ -4,7 +4,20 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { pwaScaffold, pwaCheckProblems } from '../src/core.mjs'
+import { execFileSync, spawnSync } from 'node:child_process'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
+import { fileURLToPath } from 'node:url'
+import { pwaScaffold, pwaDeclared, pwaCheckProblems } from '../src/core.mjs'
+
+const BIN = fileURLToPath(new URL('../bin/hxym18.mjs', import.meta.url))
+
+/** 跑 check；返回 { code, out }（stdout+stderr 合并；非零不抛） */
+function runCheck(dir, extra = []) {
+  const r = spawnSync('node', [BIN, 'check', dir, ...extra], { encoding: 'utf8' })
+  return { code: r.status, out: `${r.stdout || ''}${r.stderr || ''}` }
+}
 
 test('pwaScaffold：产出站点根相对路径 sw.config.mjs 与 scripts/gen-sw.mjs，后者 import @hxym18/pwa-kit/sw', () => {
   const files = pwaScaffold()
@@ -19,4 +32,39 @@ test('pwaCheckProblems：提交 sw.js / 缺 gen 脚本 → 报问题；干净 �
   assert.ok(pwaCheckProblems({ hasCommittedSw: true, genScriptPresent: true, pinned: true }).length > 0)
   assert.ok(pwaCheckProblems({ hasCommittedSw: false, genScriptPresent: false, pinned: true }).length > 0)
   assert.ok(pwaCheckProblems({ hasCommittedSw: false, genScriptPresent: true, pinned: false }).length > 0)
+})
+
+test('pwaDeclared：声明 pwa-kit（deps/devDeps 合并视图）即 true', () => {
+  assert.equal(pwaDeclared({ '@hxym18/pwa-kit': 'github:everythingIsZero/pwa-kit#v0.3.0' }), true)
+  assert.equal(pwaDeclared({ '@hxym18/auth': 'github:everythingIsZero/auth#v0.3.3' }), false)
+  assert.equal(pwaDeclared({}), false)
+  assert.equal(pwaDeclared(null), false)
+})
+
+test('check：声明 pwa-kit 且提交了 public/sw.js（无 gen 脚本）→ 命中拷贝产物；advisory exit=0，--strict exit≠0', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'hxym18-pwa-'))
+  try {
+    execFileSync('git', ['-C', dir, 'init', '-q'])
+    writeFileSync(
+      join(dir, 'package.json'),
+      JSON.stringify({ dependencies: { '@hxym18/pwa-kit': 'github:everythingIsZero/pwa-kit#v0.3.0' } }),
+    )
+    mkdirSync(join(dir, 'src'), { recursive: true })
+    writeFileSync(join(dir, 'src/a.ts'), "import { buildSw } from '@hxym18/pwa-kit/sw'\nexport const x = buildSw\n")
+    mkdirSync(join(dir, 'public'), { recursive: true })
+    writeFileSync(join(dir, 'public/sw.js'), '// copied artifact\n')
+    execFileSync('git', ['-C', dir, 'add', 'public/sw.js'])
+
+    const advisory = runCheck(dir)
+    assert.equal(advisory.code, 0, '默认 advisory 不硬卡存量站')
+    assert.match(advisory.out, /PWA 接入问题/)
+    assert.match(advisory.out, /提交了 public\/sw\.js/)
+    assert.match(advisory.out, /缺少 scripts\/gen-sw\.mjs/)
+
+    const strict = runCheck(dir, ['--strict'])
+    assert.equal(strict.code, 1, '--strict 视为失败')
+    assert.match(strict.out, /PWA 接入问题/)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
 })

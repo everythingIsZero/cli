@@ -379,6 +379,17 @@ export function pwaScaffold() {
 }
 
 /**
+ * 是否声明了 `@hxym18/pwa-kit`（deps/devDeps/peerDeps 合并视图）。
+ * check 据此触发 PWA 判定——**声明即触发**，避免「声明并 import 却提交了拷贝产物」漏检。
+ * @param {Record<string, string>} deps
+ * @returns {boolean}
+ */
+export function pwaDeclared(deps) {
+  const d = deps && typeof deps === 'object' ? deps : {}
+  return Object.prototype.hasOwnProperty.call(d, '@hxym18/pwa-kit')
+}
+
+/**
  * 判定 PWA 站点接入问题（默认模式：不提交 sw.js + 有生成脚本 + pwa-kit tag 锁版）。
  * 不做 swDriftProblems：默认不提交 sw.js，无漂移比对对象。
  * @param {{ hasCommittedSw: boolean, genScriptPresent: boolean, pinned: boolean }} input

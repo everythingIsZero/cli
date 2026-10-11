@@ -11,6 +11,7 @@ export function authScaffold(opts?: { srcDir?: string }): { path: string; conten
 export function taroAuthScaffold(opts?: { srcDir?: string }): { path: string; content: string }[]
 export function dbScaffold(opts?: { dir?: string }): { path: string; content: string }[]
 export function pwaScaffold(): { path: string; content: string }[]
+export function pwaDeclared(deps: Record<string, string>): boolean
 export function pwaCheckProblems(input: {
   hasCommittedSw: boolean
   genScriptPresent: boolean

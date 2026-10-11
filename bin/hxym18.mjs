@@ -15,7 +15,7 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { resolve, dirname } from 'node:path'
-import { KNOWN_PACKAGES, LEGACY_AUTH_PACKAGE, pinSpec, isTagPin, findPinProblems, depsForCheck, unusedShared, findLegacyRefs, authScaffold, taroAuthScaffold, dbScaffold, pwaScaffold, pwaCheckProblems, checkBaseline } from '../src/index.mjs'
+import { KNOWN_PACKAGES, LEGACY_AUTH_PACKAGE, pinSpec, isTagPin, findPinProblems, depsForCheck, unusedShared, findLegacyRefs, authScaffold, taroAuthScaffold, dbScaffold, pwaScaffold, pwaDeclared, pwaCheckProblems, checkBaseline } from '../src/index.mjs'
 
 function parseArgs(argv) {
   const out = { _: [], write: false, dir: null, baseline: null, strict: false, target: null }
@@ -152,10 +152,9 @@ function cmdCheck(args) {
     console.error(`✗ 声明了但未 import 的共享包（死依赖，${dir}）：`)
     for (const p of unused) console.error(`  - ${p}（package.json 有，代码未引用；删依赖或接入）`)
   }
-  // PWA 站点接入（init pwa 生成物）：不提交 sw.js + 有生成脚本 + pwa-kit tag 锁版。
-  // 只在站点出现 PWA 接入标记时判定，避免对未接入项目误报。
-  const isPwaSite = existsSync(resolve(dir, 'sw.config.mjs')) || existsSync(resolve(dir, 'scripts/gen-sw.mjs'))
-  if (isPwaSite) {
+  // PWA 接入（init pwa 生成物）：不提交 sw.js + 有生成脚本 + pwa-kit tag 锁版。
+  // 触发条件 = 声明 @hxym18/pwa-kit（声明即触发，命中「拷贝产物」失败模式）；默认 advisory，--strict 视为失败。
+  if (pwaDeclared(allDeps)) {
     const genScriptPresent = existsSync(resolve(dir, 'scripts/gen-sw.mjs'))
     let hasCommittedSw = false
     try {
@@ -170,9 +169,13 @@ function cmdCheck(args) {
       pinned: isTagPin(allDeps['@hxym18/pwa-kit']),
     })
     if (pwaProblems.length) {
-      bad = true
-      console.error(`✗ PWA 接入问题（${dir}）：`)
-      for (const p of pwaProblems) console.error(`  - ${p}`)
+      const lines = pwaProblems.map((p) => `  - ${p}`).join('\n')
+      if (args.strict) {
+        bad = true
+        console.error(`✗ PWA 接入问题（strict，${dir}）：\n${lines}`)
+      } else {
+        console.warn(`⚠ PWA 接入问题（advisory；加 --strict 视为失败，${dir}）：\n${lines}`)
+      }
     }
   }
   // 版本基线（advisory，--strict 视为失败）

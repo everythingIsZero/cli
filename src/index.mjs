@@ -11,6 +11,7 @@ export {
   taroAuthScaffold,
   dbScaffold,
   pwaScaffold,
+  pwaDeclared,
   pwaCheckProblems,
   checkBaseline,
 } from './core.mjs'
