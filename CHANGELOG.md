@@ -4,6 +4,12 @@
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-10-11
+
+### Fixed
+
+- `init pwa` 生成的 `sw.config.mjs` / `scripts/gen-sw.mjs` 去掉 `|| 'dev'` 兜底：`SW_VERSION` 为空即由 `buildSw` 构建报错，不再静默写死 `dev` 版本。
+
 ## [0.5.0] - 2026-10-11
 
 ### Added
