@@ -4,6 +4,21 @@
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-11
+
+### Added
+
+- **`hxym18 gen contracts`**：从各包**源码**读取常量，生成 L0 契约（`knowledge/integration/contracts/`，8 份 + `contracts@<ver>+<sha8>` 集版本身份）、各包内**契约副本**（带内容哈希）与 `package.json` 的 `hxym18.contracts` 声明；默认 dry-run、`--write` 落盘、幂等。`endpoints` 会交叉核对 `CORE_AUTH_ENDPOINTS` 与 auth 的 `dispatch`，不一致即报错。
+- **`hxym18 check <pkg> --contracts <L0>`（包级层，spec §7）**：声明↔副本一一对应、副本内容哈希与文件名一致、副本与 L0 **逐字节相同**、端点完整性；任一不过 **exit 1**。站点级 `check` 行为不变。
+
+### Fixed
+
+- `check` 的 PWA 判定补「`scripts/gen-sw.mjs` 必须 import `@hxym18/pwa-kit/sw`」：此前只看文件存在，自写死 SW 的站点也能过（读文件失败即视为有问题，不静默通过）。
+
+### Chore
+
+- 包内**契约副本**声明（`hxym18.contracts`）：`endpoints@1`。
+
 ## [0.5.2] - 2026-10-11
 
 ### Changed
