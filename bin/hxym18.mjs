@@ -5,6 +5,8 @@
  * 用法：
  *   hxym18 add <repo> [--write] [--dir <项目目录>]   解析最新 tag 并（可选）写入 package.json
  *   hxym18 check [dir]                                校验横切件接入（tag 锁版 / 旧包残留 / 死依赖），可失败
+ *   hxym18 check <包目录> --contracts <L0 目录>        包级契约校验（声明/副本/哈希/L0 相等/端点/前缀），可失败
+ *   hxym18 gen contracts [--root <工作区根>] [--l0 <L0 目录>] [--write]  生成契约 L0 + 包内副本 + 声明
  *   hxym18 init auth [--target next|taro] [--write] [--dir <目录>]  生成 auth 接入文件（缺省自动探测项目类型）
  *   hxym18 init db [--write] [--dir <项目根>]                      生成后端数据层骨架（落 <根>/server/src/）
  *   hxym18 init pwa [--write] [--dir <站点根>]                     生成 PWA 接入文件（sw.config.mjs + scripts/gen-sw.mjs）
@@ -14,11 +16,11 @@
  */
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
-import { resolve, dirname } from 'node:path'
-import { KNOWN_PACKAGES, LEGACY_AUTH_PACKAGE, pinSpec, isTagPin, findPinProblems, depsForCheck, unusedShared, findLegacyRefs, selfWrittenCoreEndpoints, authScaffold, taroAuthScaffold, dbScaffold, pwaScaffold, pwaDeclared, pwaCheckProblems, genScriptImportsPwaKit, checkBaseline } from '../src/index.mjs'
+import { resolve, dirname, basename } from 'node:path'
+import { KNOWN_PACKAGES, LEGACY_AUTH_PACKAGE, pinSpec, isTagPin, findPinProblems, depsForCheck, unusedShared, findLegacyRefs, selfWrittenCoreEndpoints, authScaffold, taroAuthScaffold, dbScaffold, pwaScaffold, pwaDeclared, pwaCheckProblems, genScriptImportsPwaKit, checkBaseline, planContracts, writeContracts, packageContractProblems } from '../src/index.mjs'
 
 function parseArgs(argv) {
-  const out = { _: [], write: false, dir: null, baseline: null, strict: false, target: null }
+  const out = { _: [], write: false, dir: null, baseline: null, strict: false, target: null, root: null, l0: null, contracts: null }
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
     if (a === '--write') out.write = true
@@ -26,6 +28,9 @@ function parseArgs(argv) {
     else if (a === '--dir') out.dir = argv[++i]
     else if (a === '--baseline') out.baseline = argv[++i]
     else if (a === '--target') out.target = argv[++i]
+    else if (a === '--root') out.root = argv[++i]
+    else if (a === '--l0') out.l0 = argv[++i]
+    else if (a === '--contracts') out.contracts = argv[++i]
     else out._.push(a)
   }
   return out
@@ -90,6 +95,10 @@ function cmdAdd(args) {
 function cmdCheck(args) {
   const dir = args._[1] || args.dir || '.'
   const { json } = readPkg(dir)
+  // 包级契约校验（spec §7）：--contracts 显式触发，或包已声明 hxym18.contracts 自动触发。
+  // 站点（无 hxym18.contracts）维持既有站点级行为不变。
+  const declared = json.hxym18 && json.hxym18.contracts
+  if (args.contracts || (declared && Object.keys(declared).length)) return cmdCheckContracts(args, dir)
   const allDeps = depsForCheck(json)
   const problems = findPinProblems(allDeps)
   // 旧包残留：只扫**代码文件**里的引用（import/require 等）+ package.json 依赖键，
@@ -351,6 +360,45 @@ function cmdInitStats(args) {
   return 0
 }
 
+/** 包级契约 check（spec §7）：声明/副本/哈希/L0 相等/端点/前缀。任一项不过 → exit 1。 */
+function cmdCheckContracts(args, dir) {
+  const pkgDir = resolve(dir)
+  let l0Dir = args.contracts
+  if (!l0Dir) {
+    // 自动探测：包目录位于 Projects/<pkg>，则工作区 L0 在 ../../knowledge/integration/contracts
+    const guess = resolve(pkgDir, '../../knowledge/integration/contracts')
+    if (existsSync(guess)) l0Dir = guess
+  }
+  const problems = packageContractProblems({ pkgDir, l0Dir: l0Dir || null })
+  if (problems.length) {
+    console.error(`✗ 包级契约校验失败（${dir}）：`)
+    for (const p of problems) console.error(`  - ${p}`)
+    return 1
+  }
+  console.log(`✓ ${dir} 包级契约校验通过${l0Dir ? `（L0=${l0Dir}）` : '（自校验：声明+哈希+前缀）'}`)
+  return 0
+}
+
+/** 契约副本生成器（spec §5）：L0 + 各包副本 + package.json 声明。默认 dry-run。 */
+async function cmdGenContracts(args) {
+  const opts = { root: args.root || '.' }
+  if (args.l0) opts.l0Dir = args.l0
+  const plan = await planContracts(opts)
+  if (!args.write) {
+    console.log(`将生成契约（dry-run，加 --write 落盘）：`)
+    console.log(`L0 目录：${plan.l0Dir}`)
+    for (const e of plan.entries) console.log(`  L0   ${e.filename}`)
+    for (const w of plan.copyWrites) console.log(`  副本 ${w.pkg.padEnd(10)} contracts/${basename(w.path)}`)
+    for (const e of plan.pkgEdits) console.log(`  声明 ${e.pkg.padEnd(10)} package.json → hxym18.contracts`)
+    return 0
+  }
+  const done = await writeContracts(opts)
+  console.log(
+    `已写入：L0 ${done.l0Writes.length} 份；副本 ${done.copyWrites.length} 份；声明 ${done.pkgEdits.length} 个包`,
+  )
+  return 0
+}
+
 function main() {
   const args = parseArgs(process.argv.slice(2))
   const cmd = args._[0]
@@ -358,6 +406,12 @@ function main() {
     if (cmd === 'list') return cmdList()
     if (cmd === 'add') return cmdAdd(args)
     if (cmd === 'check') return cmdCheck(args)
+    if (cmd === 'gen') {
+      const sub = args._[1]
+      if (sub === 'contracts') return cmdGenContracts(args)
+      console.error('gen 支持：contracts')
+      return 1
+    }
     if (cmd === 'init') {
       const sub = args._[1]
       if (sub === 'auth') return cmdInitAuth(args)
@@ -367,7 +421,7 @@ function main() {
       console.error('init 支持：auth | db | pwa | stats')
       return 1
     }
-    console.error('用法：hxym18 <add|check|init auth|init db|init pwa|init stats|list> ...')
+    console.error('用法：hxym18 <add|check|gen contracts|init auth|init db|init pwa|init stats|list> ...')
     return 1
   } catch (e) {
     console.error(`hxym18: ${(e && e.message) || e}`)
@@ -375,4 +429,10 @@ function main() {
   }
 }
 
-process.exit(main())
+Promise.resolve()
+  .then(() => main())
+  .then((code) => process.exit(code))
+  .catch((e) => {
+    console.error(`hxym18: ${(e && e.message) || e}`)
+    process.exit(1)
+  })

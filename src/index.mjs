@@ -18,3 +18,19 @@ export {
   genScriptImportsPwaKit,
   checkBaseline,
 } from './core.mjs'
+export {
+  CONTRACT_VERSION,
+  CONTRACT_NAMES,
+  CONTRACT_CONSUMERS,
+  PACKAGE_DIRS,
+  contractHash,
+  contractFilename,
+  buildContracts,
+  planContracts,
+  writeContracts,
+  packageContractProblems,
+  parseCoreEndpoints,
+  parseAuthDispatch,
+  responseKeysFromLiteral,
+  spreadKeysFromLiteral,
+} from './contracts.mjs'

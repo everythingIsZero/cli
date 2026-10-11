@@ -27,5 +27,11 @@
   },
   "scripts": {
     "test": "node --test 'test/**/*.test.mjs'"
+  },
+  "hxym18": {
+    "contracts": {
+      "endpoints": "1+7483ca8a",
+      "contracts": "1+189b5717"
+    }
   }
 }
