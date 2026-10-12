@@ -2,6 +2,17 @@
 
 本仓遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 格式，版本语义按 [SemVer](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased]
+
+### Added
+
+- **`hxym18 check` 站点接入兜底断言（T17b）**：新增 `src/assertions.mjs`（纯函数）并接入站点级 check。全部**默认 advisory**（打印 ⚠，`exit=0`），`--strict` 才 `exit=1`——**不改默认行为，存量绿站不会突然失败**。覆盖 TOOL-1/2/3/4/5（PWA 构建链·镜像·`/sw.js` 头·manifest·`.gitignore`）、TOOL-6/7/8（`resolveIdentity` 占位·Hono catch-all 末位·`AUTH_INTERNAL_URL` 陈旧值）、TOOL-9（analytics 版本 ≥ 门控修复版 + 禁硬编码 `u.hxym18.com`）、TOOL-11（禁手写 UA）、TOOL-12/13（db 骨架·stats 出口结果校验）、TOOL-15（未接站「应接什么」）、§4③（禁硬编码 `SSO_AUTH_BASE`、禁自写 `consumeReturn`/轮询）。TOOL-15 跨全仓 `package.json` 取并集，monorepo 根也成立。
+- `init pwa` 增 `next.config.pwa-snippet.mjs`：示范用 `withPwaKit`（`@hxym18/pwa-kit/next`）包 nextConfig 外层，注入 `/sw.js` no-cache（TOOL-3/DEF-4 的生成器侧消除）。
+
+### Changed
+
+- `check --baseline` 判**方向**（TOOL-14）：不一致时区分「站点落后」（应升级站点）与「基线陈旧」（站点已领先，应更新 `baseline.json`）。新增纯函数 `baselineDeviations`/`baselineDirection`；`checkBaseline` 既有返回形状不变。
+
 ## [0.7.0] - 2026-10-12
 
 ### Added
