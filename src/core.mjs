@@ -435,11 +435,26 @@ RUN test -n "$SW_VERSION" || (echo "[gen-sw] SW_VERSION 必填（部署主机注
 COPY --from=builder --chown=node:node /app/public ./public
 `
 
+const NEXT_CONFIG_PWA_SNIPPET = `/**
+ * next.config pwa 片段（由 \`hxym18 init pwa\` 生成；把 withPwaKit 包到本站 nextConfig 外层）。
+ * 作用：注入 /sw.js 的 \`Cache-Control: no-cache\`（SW 内容随构建变，被 HTTP 缓存会卡住升级，TOOL-3/DEF-4）。
+ * 纪律：/sw.js 头由共享 \`withPwaKit\` 单源注入，站点不再手写 headers()——手写变体会与安全修复漂移。
+ */
+import { withPwaKit } from '@hxym18/pwa-kit/next'
+
+const nextConfig = {
+  // ...本站既有配置
+}
+
+export default withPwaKit(nextConfig)
+`
+
 /**
  * 生成 PWA 接入文件（Next 站点）。
  * 返回**站点根相对路径**（与 authScaffold/dbScaffold 同约定）；由 cmdInitPwa 调 applyScaffold 落盘。
  * 产物：sw.config.mjs（默认读 SW_VERSION + 默认 /_next/static/ cache-first）+ scripts/gen-sw.mjs
- *       + Dockerfile.pwa-snippet（构建期校验/生成段 + 运行镜像 COPY public 段，TOOL-1/2/DEF-5）。
+ *       + Dockerfile.pwa-snippet（构建期校验/生成段 + 运行镜像 COPY public 段，TOOL-1/2/DEF-5）
+ *       + next.config.pwa-snippet.mjs（withPwaKit 外层接入示范，TOOL-3/DEF-4）。
  * @returns {{ path: string, content: string }[]}
  */
 export function pwaScaffold() {
@@ -447,6 +462,7 @@ export function pwaScaffold() {
     { path: 'sw.config.mjs', content: SW_CONFIG_MJS },
     { path: 'scripts/gen-sw.mjs', content: GEN_SW_MJS },
     { path: 'Dockerfile.pwa-snippet', content: DOCKERFILE_PWA_SNIPPET },
+    { path: 'next.config.pwa-snippet.mjs', content: NEXT_CONFIG_PWA_SNIPPET },
   ]
 }
 
