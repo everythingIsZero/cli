@@ -70,7 +70,7 @@ const CLEAN_PWA = {
   'next.config.mjs': "import { withPwaKit } from '@hxym18/pwa-kit/next'\nexport default withPwaKit({})\n",
   '.gitignore': 'node_modules/\npublic/sw.js\n',
   'src/app/manifest.ts': "export default function m() { return { id: '/', icons: [{ purpose: 'maskable' }] } }\n",
-  'src/app/layout.tsx': 'export default function L() { return null }\n// icons: { apple: "/icons/icon-192.png" }\n',
+  'src/app/layout.tsx': "export const metadata = { icons: { apple: '/icons/icon-192.png' } }\nexport default function L() { return null }\n",
 }
 
 // ------------------------------------------------------------------ 纯函数单测
@@ -129,7 +129,7 @@ test('manifestProblems：id / maskable / apple-touch-icon；buildManifest 兜默
   assert.ok(bad.some((p) => p.includes('apple-touch-icon')))
   const good = manifestProblems({
     manifests: ["export default () => ({ id: '/', icons: [{ purpose: 'maskable' }] })"],
-    layouts: ['// icons: { apple: "/icons/icon-192.png" }'],
+    layouts: ["export const metadata = { icons: { apple: '/icons/icon-192.png' } }"],
   })
   assert.deepEqual(good, [])
   // buildManifest：id/maskable 由包默认兜底，不报
@@ -138,6 +138,20 @@ test('manifestProblems：id / maskable / apple-touch-icon；buildManifest 兜默
     layouts: ['icons: { apple: [{}] }'],
   })
   assert.deepEqual(viaPkg, [])
+})
+
+test('manifestProblems：apple-touch-icon 只在注释里 → 不满足（改前假阴：注释行也当满足）', () => {
+  const commentOnly = manifestProblems({
+    manifests: ["export default () => ({ id: '/', icons: [{ purpose: 'maskable' }] })"],
+    layouts: ['export default function L() { return null }\n// icons: { apple: "/icons/icon-192.png" }\n'],
+  })
+  assert.ok(commentOnly.some((p) => p.includes('apple-touch-icon')), commentOnly.join('\n'))
+  // 块注释形态同样不算
+  const blockComment = manifestProblems({
+    manifests: ["export default () => ({ id: '/', icons: [{ purpose: 'maskable' }] })"],
+    layouts: ['/* apple: "/icons/icon-192.png" */\nexport default function L() { return null }\n'],
+  })
+  assert.ok(blockComment.some((p) => p.includes('apple-touch-icon')), blockComment.join('\n'))
 })
 
 test('resolveIdentityPlaceholderProblems：占位即报（TOOL-6）', () => {
@@ -224,6 +238,37 @@ test('dbSkeletonProblems：db.ts 缺 WAL / 迁移调用点即报（TOOL-12）', 
   assert.ok(bad.some((p) => p.includes('WAL')))
   assert.ok(bad.some((p) => p.includes('migrate')))
   assert.deepEqual(dbSkeletonProblems([{ path: 'server/src/db.ts', content: "db.pragma('journal_mode = WAL')\nmigrate(db)\n" }]), [])
+})
+
+test('dbSkeletonProblems：认内联 DDL + 幂等 ALTER / migrate 前缀 / PRAGMA user_version（TOOL-12 改前误报）', () => {
+  // 既有站形态（fang）：内联 db.exec(DDL) + PRAGMA table_info 守卫 + 幂等 ALTER ADD COLUMN（无 migrate( 调用）
+  const fangLike = dbSkeletonProblems([
+    {
+      path: 'apps/fang/src/lib/db.ts',
+      content:
+        "db.pragma(\"journal_mode = WAL\")\ndb.exec(DDL)\nconst cols = new Set((db.prepare(`PRAGMA table_info(contracts)`).all() as {name:string}[]).map(c=>c.name))\nif (!cols.has('map_lat')) db.exec(\"ALTER TABLE contracts ADD COLUMN map_lat REAL\")\n",
+    },
+  ])
+  assert.deepEqual(fangLike, [])
+  // 既有站形态（wordinput）：内联 DDL + 幂等 ALTER + migrate 前缀函数调用（migrateLegacyRows(db, adminId)）
+  const wordinputLike = dbSkeletonProblems([
+    {
+      path: 'apps/wordinput/src/lib/db.ts',
+      content:
+        "db.pragma('journal_mode = WAL')\ndb.exec('ALTER TABLE templates RENAME TO templates_legacy')\nmigrateLegacyRows(db, adminId)\n",
+    },
+  ])
+  assert.deepEqual(wordinputLike, [])
+  // 版本化迁移：PRAGMA user_version
+  assert.deepEqual(
+    dbSkeletonProblems([{ path: 'server/src/db.ts', content: "db.pragma('journal_mode = WAL')\nconst v = db.pragma('user_version')\n" }]),
+    [],
+  )
+  // 反例：有 WAL 但既无 migrate 前缀、也无 ALTER / user_version → 仍报迁移缺失（保判定力）
+  const none = dbSkeletonProblems([
+    { path: 'server/src/db.ts', content: "db.pragma('journal_mode = WAL')\nexport const db = new Database()\n" },
+  ])
+  assert.ok(none.some((p) => p.includes('migrate')), none.join('\n'))
 })
 
 test('opsStatsProblems：stats 出口缺 token/503/403/no-store 逐项报（TOOL-13）', () => {

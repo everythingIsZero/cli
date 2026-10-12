@@ -161,7 +161,11 @@ export function manifestProblems(input = {}) {
     }
   }
   const lt = layouts.join('\n')
-  if (!/apple-touch-icon/.test(lt) && !/apple\s*:\s*['"[{]/.test(lt)) {
+  // apple-touch-icon 须出现在**代码行**（注释行不算：注释里写 `apple:` 会让 iOS 图标缺失却假绿）。
+  const appleInCode = lt
+    .split('\n')
+    .some((line) => !CODE_COMMENT_RE.test(line) && (/apple-touch-icon/.test(line) || /apple\s*:\s*['"[{]/.test(line)))
+  if (!appleInCode) {
     problems.push('TOOL-4/B6 缺 apple-touch-icon：iOS 加到主屏无图标（layout metadata 的 `icons.apple`）')
   }
   return problems
@@ -375,6 +379,10 @@ export function adoptionGapProblems(input = {}) {
 /**
  * TOOL-12：db 骨架校验（生成器已归 T4，此处只校验站点产物）。
  * 任一 `db.ts`/`db.mjs`/`db.js` 须 WAL + 迁移调用点。
+ * 迁移调用点认三种既有形态（不误伤存量站）：
+ *   - `migrate` 前缀函数调用（`migrate(db)` / `migrateLegacyRows(db, …)`）；
+ *   - 幂等 `ALTER TABLE`（存量站 `PRAGMA table_info` 守卫 + `ALTER TABLE … ADD COLUMN`）；
+ *   - `user_version`（版本化迁移：`PRAGMA user_version` / `db.pragma('user_version')`）。
  * @param {{ path: string, content: string }[]} sources
  * @returns {string[]}
  */
@@ -385,7 +393,13 @@ export function dbSkeletonProblems(sources = []) {
     if (base !== 'db.ts' && base !== 'db.mjs' && base !== 'db.js') continue
     const s = String(content || '')
     if (!/journal_mode\s*=\s*WAL/.test(s)) problems.push(`TOOL-12 ${path} 缺 journal_mode = WAL（SQLite 并发写；hxym18 init db）`)
-    if (!/migrate\s*\(/.test(s)) problems.push(`TOOL-12 ${path} 缺迁移调用点 migrate(db)（hxym18 init db）`)
+    const hasMigration =
+      /\bmigrate[A-Za-z0-9_$]*\s*\(/.test(s) ||
+      /\buser_version\b/i.test(s) ||
+      /ALTER\s+TABLE\b/i.test(s)
+    if (!hasMigration) {
+      problems.push(`TOOL-12 ${path} 缺迁移调用点（migrate(db) / 幂等 ALTER TABLE / PRAGMA user_version；hxym18 init db）`)
+    }
   }
   return problems
 }

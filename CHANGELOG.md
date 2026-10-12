@@ -12,6 +12,12 @@
 ### Changed
 
 - `check --baseline` 判**方向**（TOOL-14）：不一致时区分「站点落后」（应升级站点）与「基线陈旧」（站点已领先，应更新 `baseline.json`）。新增纯函数 `baselineDeviations`/`baselineDirection`；`checkBaseline` 既有返回形状不变。
+- `gen contracts` 的 `analytics-policy` 纳入 `DEFAULT_DENY_HASH_KEYS`（hash 路由门控 key，原只取 deny 前缀/query/noindex）；生成器顺带**清理旧版本孤儿产物**（值改即文件名变，不清理会留「多出未声明副本」/L0 同名多份）。
+
+### Fixed
+
+- **TOOL-12 误报**（`--strict` 误伤存量站）：迁移调用点判据由字面 `migrate(` 放宽为「`migrate` 前缀函数调用 / 幂等 `ALTER TABLE` / `user_version`」，认内联 `db.exec(DDL)` + 幂等 `ALTER` + `migrateLegacyRows(db,…)` 形态（wordinput/fang）。
+- **TOOL-4/B6 假阴**：`apple-touch-icon` 判定改为**只认代码行**（按行过滤注释，复用 `CODE_COMMENT_RE`）——注释里写 `apple:` 不再误判为已接。
 
 ## [0.7.0] - 2026-10-12
 
