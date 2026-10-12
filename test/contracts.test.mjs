@@ -87,6 +87,7 @@ export function loginCapsFromCapabilities(caps) {
 
 const ANALYTICS_CORE = `export const DEFAULT_DENY_PREFIXES = Object.freeze(['/x/', '/y/'])
 export const DEFAULT_DENY_QUERY_KEYS = Object.freeze(['token', 't', 'access_token'])
+export const DEFAULT_DENY_HASH_KEYS = Object.freeze(['token', 't', 'access_token', 'shareid', 'share', 'ticket'])
 export const NOINDEX_ROBOTS = Object.freeze({ index: false, follow: false })
 `
 
@@ -262,6 +263,8 @@ test('buildContracts：从 fixture 源码构造 8 份契约（值不手抄）', 
     assert.equal(by['cache-policy'].offlineUrl, false)
     assert.deepEqual(by['share-url-policy'], { defaultPublicHosts: ['share.example.com'], sensitiveQueryKeys: ['token', 't', 'access_token'], cardShareHosts: ['share.example.com'] })
     assert.deepEqual(by['analytics-policy'].denyPrefixes, ['/x/', '/y/'])
+    assert.deepEqual(by['analytics-policy'].denyQueryKeys, ['token', 't', 'access_token'])
+    assert.deepEqual(by['analytics-policy'].denyHashKeys, ['token', 't', 'access_token', 'shareid', 'share', 'ticket'])
     assert.deepEqual(by['analytics-policy'].noindex, { index: false, follow: false })
     assert.deepEqual(by['capability-projection'].capabilities, ['isWechat', 'isWechatMobile', 'isDesktopWechat', 'isMiniprogram', 'isDouyin', 'isPwa', 'isMobile', 'isDesktop', 'isSmallGame'])
     assert.deepEqual(by['capability-projection'].login, { isWechatInApp: 'isWechatMobile', isMobileBrowser: 'isMobile' })
@@ -313,6 +316,27 @@ test('writeContracts：落 L0 + 副本 + 声明；副本逐字节 == L0；幂等
     await writeContracts({ root, l0Dir })
     const after = readdirSync(l0Dir).filter((f) => f.endsWith('.json')).map((f) => readFileSync(join(l0Dir, f), 'utf8'))
     assert.deepEqual(after, before)
+  })
+})
+
+test('writeContracts：清理旧版本孤儿产物（值改即文件名变，不清理会留「多出未声明副本」/L0 同名多份）', async () => {
+  await withWorkspace(async (root) => {
+    const l0Dir = join(root, 'knowledge/integration/contracts')
+    await writeContracts({ root, l0Dir })
+    // 预置旧版本孤儿（L0 + 包内副本各一）
+    const orphanL0 = join(l0Dir, 'sensitive-prefixes@1+deadbeef.json')
+    const orphanCopy = join(root, DIRS.auth, 'contracts', 'sensitive-prefixes@1+deadbeef.json')
+    writeFileSync(orphanL0, '{}')
+    writeFileSync(orphanCopy, '{}')
+    const plan = await writeContracts({ root, l0Dir })
+    assert.ok(plan.staleWrites.includes(orphanL0), 'plan 应登记 L0 孤儿')
+    assert.ok(plan.staleWrites.includes(orphanCopy), 'plan 应登记副本孤儿')
+    assert.ok(!existsSync(orphanL0), 'L0 孤儿应被清理')
+    assert.ok(!existsSync(orphanCopy), '副本孤儿应被清理')
+    // 非契约命名（README.md 等）不动
+    writeFileSync(join(l0Dir, 'README.md'), 'keep\n')
+    await writeContracts({ root, l0Dir })
+    assert.ok(existsSync(join(l0Dir, 'README.md')), '非契约文件不得被清理')
   })
 })
 

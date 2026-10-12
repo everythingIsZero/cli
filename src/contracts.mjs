@@ -11,7 +11,7 @@
  * 不手抄（值改即哈希变、文件名变，漂移可检）。
  */
 import { createHash } from 'node:crypto'
-import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from 'node:fs'
+import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, rmSync } from 'node:fs'
 import { resolve, dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
@@ -359,6 +359,7 @@ export async function buildContracts(opts = {}) {
   const analyticsPolicy = {
     denyPrefixes: [...analytics.DEFAULT_DENY_PREFIXES],
     denyQueryKeys: [...analytics.DEFAULT_DENY_QUERY_KEYS],
+    denyHashKeys: [...analytics.DEFAULT_DENY_HASH_KEYS],
     noindex: { ...analytics.NOINDEX_ROBOTS },
   }
 
@@ -466,7 +467,24 @@ export async function planContracts(opts = {}) {
     pkgEdits.push({ pkg: short, path: pkgPath, content: JSON.stringify(json, null, 2) + '\n' })
   }
 
-  return { version, entries, l0Dir, l0Writes, copyWrites, pkgEdits }
+  // 清理：L0 与各包副本目录里不在本次计划内的旧版本产物
+  const expected = new Set([...l0Writes.map((w) => w.path), ...copyWrites.map((w) => w.path)])
+  const copyDirs = [...new Set(copyWrites.map((w) => dirname(w.path)))]
+  const staleWrites = [l0Dir, ...copyDirs].flatMap((d) => findStaleContractFiles(d, expected))
+
+  return { version, entries, l0Dir, l0Writes, copyWrites, pkgEdits, staleWrites }
+}
+
+/**
+ * 旧版本孤儿产物（值改即文件名变）：目标目录里 `<name>@<ver>+<sha8>.json` 形态、
+ * 但不在本次计划内的文件。不清理会在包内留下「多出未声明副本」，并让 L0 同名多份（`loadContract` 要求恰 1 份）。
+ */
+function findStaleContractFiles(dir, expected) {
+  if (!existsSync(dir)) return []
+  return readdirSync(dir)
+    .filter((f) => CONTRACT_FILE_RE.test(f))
+    .map((f) => join(dir, f))
+    .filter((p) => !expected.has(p))
 }
 
 /**
@@ -480,6 +498,7 @@ export async function writeContracts(opts = {}) {
     mkdirSync(dirname(w.path), { recursive: true })
     writeFileSync(w.path, w.content)
   }
+  for (const stale of plan.staleWrites || []) rmSync(stale, { force: true })
   for (const e of plan.pkgEdits) {
     writeFileSync(e.path, e.content)
   }
