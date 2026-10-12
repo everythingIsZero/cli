@@ -27,6 +27,45 @@ export function checkBaseline(
   baseline: { packages?: Record<string, string> } | null,
 ): { name: string; expected: string; actual: string }[]
 
+export const MIN_ANALYTICS_VERSION: string
+export const AUTH_INTERNAL_URL_ALLOWED: readonly string[]
+export const AUTH_ORIGIN: string
+export function parsePinnedTag(spec: unknown): string | null
+export function compareSemver(a: string, b: string): number
+export function baselineDirection(expected: string, actual: string): 'match' | 'site-behind' | 'baseline-stale' | 'unknown'
+export function baselineDeviations(
+  deps: Record<string, string>,
+  baseline: { packages?: Record<string, string> } | null,
+): { name: string; expected: string; actual: string; direction: string }[]
+export function pwaBuildChainProblems(input?: { dockerfiles?: string[]; buildScript?: string }): string[]
+export function swHeaderProblems(input?: { nextConfigs?: string[]; honoApps?: string[] }): string[]
+export function gitignoreSwProblems(input?: { gitignores?: string[] }): string[]
+export function manifestProblems(input?: { manifests?: string[]; layouts?: string[] }): string[]
+export function resolveIdentityPlaceholderProblems(sources?: { path: string; content: string }[]): string[]
+export function honoCatchAllOrderProblems(sources?: { path: string; content: string }[]): string[]
+export function authInternalUrls(envFiles?: { path: string; content: string }[]): { path: string; value: string }[]
+export function authEnvDriftProblems(envFiles?: { path: string; content: string }[]): string[]
+export function ssoOriginHardcodeProblems(sources?: { path: string; content: string }[]): string[]
+export function loginFlowRewriteProblems(sources?: { path: string; content: string }[]): string[]
+export function analyticsProblems(input?: { deps?: Record<string, string>; sources?: { path: string; content: string }[] }): string[]
+export function handWrittenUaProblems(sources?: { path: string; content: string }[]): string[]
+export function adoptionGapProblems(input?: { declared?: Record<string, string>; signs?: Record<string, boolean> }): string[]
+export function adoptionSigns(input?: {
+  sources?: { content: string }[]
+  manifests?: string[]
+  layouts?: string[]
+}): { loginSurface: boolean; pwaSurface: boolean; analyticsSurface: boolean; uaSurface: boolean }
+export function dbSkeletonProblems(sources?: { path: string; content: string }[]): string[]
+export function opsStatsProblems(sources?: { path: string; content: string }[]): string[]
+export function runSiteAssertions(evidence?: Record<string, unknown>): {
+  tool: string[]
+  auth: string[]
+  analytics: string[]
+  ua: string[]
+  adoption: string[]
+  data: string[]
+}
+
 export const CONTRACT_VERSION: number
 export const CONTRACT_NAMES: readonly string[]
 export const CONTRACT_CONSUMERS: Readonly<Record<string, readonly string[]>>

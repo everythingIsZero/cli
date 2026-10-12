@@ -18,7 +18,7 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { resolve, dirname, basename } from 'node:path'
-import { KNOWN_PACKAGES, LEGACY_AUTH_PACKAGE, pinSpec, isTagPin, findPinProblems, depsForCheck, unusedShared, findLegacyRefs, selfWrittenCoreEndpoints, authScaffold, taroAuthScaffold, dbScaffold, pwaScaffold, statsScaffold, pwaDeclared, pwaCheckProblems, genScriptImportsPwaKit, checkBaseline, planContracts, writeContracts, packageContractProblems } from '../src/index.mjs'
+import { KNOWN_PACKAGES, LEGACY_AUTH_PACKAGE, pinSpec, isTagPin, findPinProblems, depsForCheck, unusedShared, findLegacyRefs, selfWrittenCoreEndpoints, authScaffold, taroAuthScaffold, dbScaffold, pwaScaffold, statsScaffold, pwaDeclared, pwaCheckProblems, genScriptImportsPwaKit, baselineDeviations, runSiteAssertions, planContracts, writeContracts, packageContractProblems } from '../src/index.mjs'
 
 function parseArgs(argv) {
   const out = { _: [], write: false, dir: null, baseline: null, strict: false, target: null, root: null, l0: null, contracts: null }
@@ -91,6 +91,94 @@ function cmdAdd(args) {
     console.log(`（dry-run）加 --write 写入 ${args.dir || '.'}/package.json`)
   }
   return 0
+}
+
+/** 读文件为字符串；读失败返回 ''（由调用方按「缺失即失败」处理）。 */
+function readMaybe(p) {
+  try {
+    return readFileSync(p, 'utf8')
+  } catch (e) {
+    return ''
+  }
+}
+
+/** `find` 包装：异常（find 不可用）返回 []。 */
+function findFiles(dir, args) {
+  try {
+    return execFileSync('find', [dir, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
+      .split('\n')
+      .filter(Boolean)
+  } catch (e) {
+    return []
+  }
+}
+
+// 扫描时排除：依赖 / 构建产物 / VCS；测试文件不算站点运行代码（与既有端点扫描同口径）。
+const SCAN_PRUNE = ['-not', '-path', '*/node_modules/*', '-not', '-path', '*/.next/*', '-not', '-path', '*/.git/*', '-not', '-path', '*/dist/*', '-not', '-path', '*/build/*']
+const TEST_PATH_RE = /(?:\/tests?\/|\.test\.|\.spec\.)/
+
+/**
+ * 收齐站点级断言证据（T17b）：给 runSiteAssertions 的纯函数用。
+ * 只读，不落盘；无对应文件时给空数组（由断言本身判「缺失即失败」）。
+ */
+function scanSite(dir) {
+  const codeFiles = []
+  for (const g of ['*.ts', '*.tsx', '*.js', '*.jsx', '*.mjs', '*.cjs']) {
+    codeFiles.push(...findFiles(dir, ['-type', 'f', '-name', g, ...SCAN_PRUNE]))
+  }
+  const uniqCode = [...new Set(codeFiles)].filter((p) => !TEST_PATH_RE.test(p))
+  const sources = uniqCode.map((p) => ({ path: p, content: readMaybe(p) }))
+
+  const readAll = (nameArgs) => findFiles(dir, ['-type', 'f', ...nameArgs, ...SCAN_PRUNE]).map(readMaybe).filter(Boolean)
+
+  const dockerfiles = readAll(['-name', 'Dockerfile'])
+  const nextConfigs = readAll(['-name', 'next.config.*'])
+  const gitignores = readAll(['-name', '.gitignore'])
+  const manifests = readAll(['-name', 'manifest.*'])
+  const layouts = [...readAll(['-name', 'layout.*']), ...readAll(['-name', 'index.html'])]
+  // 只收 Hono 装配文件（含 `new Hono(`，允许 `new Hono<Env>(` 泛型）；/sw.js 头判定用它。
+  const honoApps = sources.filter((s) => /new\s+Hono\s*(?:<[^>]*>)?\s*\(/.test(s.content)).map((s) => s.content)
+
+  const envFiles = []
+  for (const name of ['.env.example', '.env']) {
+    for (const p of findFiles(dir, ['-type', 'f', '-name', name, ...SCAN_PRUNE])) {
+      envFiles.push({ path: p, content: readMaybe(p) })
+    }
+  }
+
+  // build 脚本：monorepo 里 build 可能在任意 package.json（站点根/app 包）
+  const buildScripts = []
+  // 声明的 @hxym18/*（跨全仓 package.json 取并集）：TOOL-15/TOOL-9 判「站点是否接过共享包」，
+  // 必须在 monorepo 根也成立（根 package.json 通常无依赖，站点依赖在各 app 包）。
+  const declaredShared = {}
+  for (const p of findFiles(dir, ['-type', 'f', '-name', 'package.json', ...SCAN_PRUNE])) {
+    try {
+      const j = JSON.parse(readMaybe(p) || '{}')
+      if (j.scripts && typeof j.scripts.build === 'string') buildScripts.push(j.scripts.build)
+      for (const block of [j.dependencies, j.devDependencies, j.peerDependencies]) {
+        if (block && typeof block === 'object') {
+          for (const [k, v] of Object.entries(block)) {
+            if (k.startsWith('@hxym18/')) declaredShared[k] = v
+          }
+        }
+      }
+    } catch (e) {
+      // package.json 解析失败：不影响断言（build 脚本缺失会由 TOOL-1 报）
+    }
+  }
+
+  return {
+    sources,
+    dockerfiles,
+    nextConfigs,
+    honoApps,
+    gitignores,
+    manifests,
+    layouts,
+    envFiles,
+    buildScript: buildScripts.join('\n'),
+    declaredShared,
+  }
 }
 
 function cmdCheck(args) {
@@ -245,12 +333,23 @@ function cmdCheck(args) {
     } else {
       let deviations = []
       try {
-        deviations = checkBaseline(allDeps, JSON.parse(readFileSync(baselinePath, 'utf8')))
+        deviations = baselineDeviations(allDeps, JSON.parse(readFileSync(baselinePath, 'utf8')))
       } catch (e) {
         console.error(`hxym18: 基线文件解析失败 ${baselinePath}: ${(e && e.message) || e}`)
       }
       if (deviations.length) {
-        const lines = deviations.map((d) => `  - ${d.name}: ${d.actual}（基线 ${d.expected}）`).join('\n')
+        // TOOL-14：判方向——站点落后（应升站）vs 基线陈旧（站点已领先，应更新 baseline.json）。
+        const lines = deviations
+          .map((d) => {
+            const dirTag =
+              d.direction === 'site-behind'
+                ? '站点落后'
+                : d.direction === 'baseline-stale'
+                  ? '基线陈旧（站点已领先，更新 baseline.json）'
+                  : '方向未知'
+            return `  - ${d.name}: ${d.actual}（基线 ${d.expected}；${dirTag}）`
+          })
+          .join('\n')
         if (args.strict) {
           bad = true
           console.error(`✗ 与版本基线不一致（strict）：\n${lines}`)
@@ -258,6 +357,22 @@ function cmdCheck(args) {
           console.warn(`⚠ 与版本基线不一致（advisory；加 --strict 视为失败）：\n${lines}`)
         }
       }
+    }
+  }
+  // 站点级兜底断言（T17b：PWA 构建链 / auth 漂移 / 统计门控 / UA / 未接站「应接什么」/ db·stats 结果校验）。
+  // 默认 advisory（打印 ⚠），`--strict` 才 exit≠0——不改既有默认行为，存量绿站不会突然失败。
+  const evidence = scanSite(dir)
+  evidence.deps = { ...allDeps, ...evidence.declaredShared }
+  evidence.pwaDeclared = pwaDeclared(evidence.deps)
+  const groups = runSiteAssertions(evidence)
+  const messages = [...groups.tool, ...groups.auth, ...groups.analytics, ...groups.ua, ...groups.adoption, ...groups.data]
+  if (messages.length) {
+    const lines = messages.map((m) => `  - ${m}`).join('\n')
+    if (args.strict) {
+      bad = true
+      console.error(`✗ 站点接入断言（strict，${dir}）：\n${lines}`)
+    } else {
+      console.warn(`⚠ 站点接入断言（advisory；加 --strict 视为失败，${dir}）：\n${lines}`)
     }
   }
   if (!bad) console.log(`✓ ${dir} 接入检查通过`)
@@ -347,7 +462,7 @@ function cmdInitPwa(args) {
     pwaScaffold(),
     dir,
     args.write,
-    '另需：package.json 加 @hxym18/pwa-kit（hxym18 add pwa-kit --write）；把 Dockerfile.pwa-snippet 两段合入 Dockerfile；构建前置 node scripts/gen-sw.mjs（SW_VERSION 必填，部署主机注入 git SHA）；.gitignore 忽略 public/sw.js（sw.js 为构建产出，不提交）。',
+    '另需：package.json 加 @hxym18/pwa-kit（hxym18 add pwa-kit --write）；把 Dockerfile.pwa-snippet 两段合入 Dockerfile；next.config.pwa-snippet.mjs 示范用 withPwaKit 包外层（注入 /sw.js no-cache，勿手写 headers()）；构建前置 node scripts/gen-sw.mjs（SW_VERSION 必填，部署主机注入 git SHA）；.gitignore 忽略 public/sw.js（sw.js 为构建产出，不提交）。',
   )
 }
 
