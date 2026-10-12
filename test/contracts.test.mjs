@@ -120,15 +120,15 @@ function createQr(confirm) {
 }
 async function handleIntrospect() {
   if (!valid) return send(res, 200, { ok: true, openid: null })
-  return send(res, 200, { ok: true, openid: r.openid })
+  return send(res, 200, { ok: true, openid: r.openid, unionid: r.unionid })
 }
 async function handleProfile() {
-  return send(res, 200, { ok: true, profile: profile || {} })
+  return send(res, 200, { ok: true, profile: profile || {}, unionid: r.unionid })
 }
 async function pollScene(scene) {
   const rec = null
-  const { org, openid } = rec
-  const result = { ok: true, status: 'ok', openid: openid ?? null }
+  const { org, openid, unionid } = rec
+  const result = { ok: true, status: 'ok', openid: openid ?? null, unionid: unionid || null }
   if (org && openid) {
     const profile = await readProfile(openid, org)
     if (profile && profile.nickname) result.nickname = profile.nickname
@@ -268,11 +268,11 @@ test('buildContracts：从 fixture 源码构造 8 份契约（值不手抄）', 
     assert.deepEqual(by['analytics-policy'].noindex, { index: false, follow: false })
     assert.deepEqual(by['capability-projection'].capabilities, ['isWechat', 'isWechatMobile', 'isDesktopWechat', 'isMiniprogram', 'isDouyin', 'isPwa', 'isMobile', 'isDesktop', 'isSmallGame'])
     assert.deepEqual(by['capability-projection'].login, { isWechatInApp: 'isWechatMobile', isMobileBrowser: 'isMobile' })
-    assert.deepEqual(by.facade.operations.introspect.responseKeys, ['ok', 'openid'])
-    assert.deepEqual(by.facade.operations.profile.responseKeys, ['ok', 'profile'])
+    assert.deepEqual(by.facade.operations.introspect.responseKeys, ['ok', 'openid', 'unionid'])
+    assert.deepEqual(by.facade.operations.profile.responseKeys, ['ok', 'profile', 'unionid'])
     assert.deepEqual(by.facade.operations['qr.issue'].responseKeys, ['ok', 'scene', 'qrUrl', 'expiresIn', 'pairCode', 'confirm'])
-    assert.deepEqual(by.facade.operations['qr.poll'].responseKeys, ['ok', 'status', 'openid', 'nickname', 'avatar'])
-    assert.deepEqual(by.facade.pending, ['unionid'])
+    assert.deepEqual(by.facade.operations['qr.poll'].responseKeys, ['ok', 'status', 'openid', 'unionid', 'nickname', 'avatar'])
+    assert.deepEqual(by.facade.pending, [])
     // 清单 = 其余 7 份的 ver+sha8
     const seven = Object.fromEntries(entries.filter((e) => e.name !== 'contracts').map((e) => [e.name, `1+${e.sha8}`]))
     assert.deepEqual(by.contracts.contracts, seven)

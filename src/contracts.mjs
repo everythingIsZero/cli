@@ -375,9 +375,9 @@ export async function buildContracts(opts = {}) {
   }
   const capabilityProjection = { capabilities: capKeys, login }
 
-  // —— facade：sso-bridge 响应键（introspect/profile/qr.issue/qr.poll）；unionid 为 pending 依赖 ——
-  const introspectLit = objectLiteralContaining(ssoSrc, /ok:\s*true,\s*openid:/)
-  const profileLit = objectLiteralContaining(ssoSrc, /ok:\s*true,\s*profile:/)
+  // —— facade：sso-bridge 响应键（introspect/profile/qr.issue/qr.poll）；unionid 已落地（pending 为空） ——
+  const introspectLit = objectLiteralContaining(ssoSrc, /ok:\s*true,\s*openid:\s*r\.openid/)
+  const profileLit = objectLiteralContaining(ssoSrc, /ok:\s*true,\s*profile:\s*profile/)
   const issueLit = objectLiteralContaining(ssoSrc, 'qrUrl:')
   const pollLit = objectLiteralWhere(ssoSrc, /const result = \{/)
   const issueKeys = [...new Set([...responseKeysFromLiteral(issueLit), ...spreadKeysFromLiteral(issueLit)])]
@@ -391,8 +391,8 @@ export async function buildContracts(opts = {}) {
       'qr.issue': { method: 'POST', responseKeys: issueKeys },
       'qr.poll': { method: 'POST', responseKeys: pollKeys },
     },
-    // spec §S10 / §1 P11：门面 introspect 目前只回 openid，unionid 待真门面变更
-    pending: ['unionid'],
+    // spec §S10 / §12：unionid 已随门面回传（introspect/profile/qr.poll），pending 清空
+    pending: [],
   }
 
   const values = {
