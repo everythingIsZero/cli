@@ -191,7 +191,7 @@ async function withWorkspace(fn) {
 
 function runBin(args) {
   try {
-    const out = execFileSync('node', [BIN, ...args], { encoding: 'utf8', stdio: 'pipe' })
+    const out = execFileSync(process.execPath, [BIN, ...args], { encoding: 'utf8', stdio: 'pipe' })
     return { code: 0, out }
   } catch (e) {
     return { code: e.status, out: `${e.stdout || ''}${e.stderr || ''}` }

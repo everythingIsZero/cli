@@ -98,14 +98,42 @@ test('checkBaseline：空/缺基线返回空', async () => {
   assert.deepEqual(checkBaseline({}, { packages: {} }), [])
 })
 
-test('dbScaffold：生成 db.ts + migrations.ts（WAL/foreign_keys/user_version）', async () => {
+test('dbScaffold：生成 db.ts + migrations.ts（WAL/foreign_keys/迁移调用点/user_version）', async () => {
   const { dbScaffold } = await import('../src/index.mjs')
   const files = dbScaffold({ dir: 'server/src' })
   assert.deepEqual(files.map((f) => f.path), ['server/src/db.ts', 'server/src/migrations.ts'])
   assert.match(files[0].content, /journal_mode = WAL/)
   assert.match(files[0].content, /foreign_keys = ON/)
+  assert.match(files[0].content, /import \{ migrate \} from '\.\/migrations'/) // 迁移调用点（TOOL-12）
+  assert.match(files[0].content, /migrate\(db\)/)
   assert.match(files[1].content, /user_version/)
   assert.match(files[1].content, /MIGRATIONS/)
+})
+
+test('statsScaffold：生成只读统计出口（route + lib；x-ops-token 鉴权）', async () => {
+  const { statsScaffold } = await import('../src/index.mjs')
+  const files = statsScaffold({ srcDir: 'src' })
+  assert.deepEqual(files.map((f) => f.path), ['src/lib/ops-stats.ts', 'src/app/api/ops/stats/route.ts'])
+  const route = files[1].content
+  assert.match(route, /x-ops-token/)
+  assert.match(route, /OPS_STATS_TOKEN/)
+  assert.match(route, /timingSafeEqual/)
+  assert.match(route, /status: 503/) // 未配置 OPS_STATS_TOKEN
+  assert.match(route, /status: 403/) // token 不匹配
+  assert.match(route, /'Cache-Control': 'no-store'/)
+  assert.match(route, /@\/lib\/ops-stats/)
+  const lib = files[0].content
+  assert.match(lib, /export const OPS_WINDOWS/)
+  assert.match(lib, /export function buildOpsStats/)
+  assert.match(lib, /null/) // 缺项 ≠ 0
+})
+
+test('statsScaffold：无 src 目录时基目录为空', async () => {
+  const { statsScaffold } = await import('../src/index.mjs')
+  assert.deepEqual(statsScaffold({ srcDir: '' }).map((f) => f.path), [
+    'lib/ops-stats.ts',
+    'app/api/ops/stats/route.ts',
+  ])
 })
 
 test('taroAuthScaffold：生成 Taro 接线文件（客户端 + Hono 服务端）', async () => {

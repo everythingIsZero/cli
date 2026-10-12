@@ -13,6 +13,7 @@ export {
   taroAuthScaffold,
   dbScaffold,
   pwaScaffold,
+  statsScaffold,
   pwaDeclared,
   pwaCheckProblems,
   genScriptImportsPwaKit,

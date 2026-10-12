@@ -16,7 +16,7 @@ const BIN = fileURLToPath(new URL('../bin/hxym18.mjs', import.meta.url))
 /** 跑 check；返回 { code, out }（非零不抛） */
 function runCheck(dir) {
   try {
-    const out = execFileSync('node', [BIN, 'check', dir], { encoding: 'utf8', stdio: 'pipe' })
+    const out = execFileSync(process.execPath, [BIN, 'check', dir], { encoding: 'utf8', stdio: 'pipe' })
     return { code: 0, out }
   } catch (e) {
     return { code: e.status, out: `${e.stdout || ''}${e.stderr || ''}` }

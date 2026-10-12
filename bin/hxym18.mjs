@@ -8,8 +8,9 @@
  *   hxym18 check <包目录> --contracts <L0 目录>        包级契约校验（声明/副本/哈希/L0 相等/端点/前缀），可失败
  *   hxym18 gen contracts [--root <工作区根>] [--l0 <L0 目录>] [--write]  生成契约 L0 + 包内副本 + 声明
  *   hxym18 init auth [--target next|taro] [--write] [--dir <目录>]  生成 auth 接入文件（缺省自动探测项目类型）
- *   hxym18 init db [--write] [--dir <项目根>]                      生成后端数据层骨架（落 <根>/server/src/）
- *   hxym18 init pwa [--write] [--dir <站点根>]                     生成 PWA 接入文件（sw.config.mjs + scripts/gen-sw.mjs）
+ *   hxym18 init db [--write] [--dir <项目根>]                      生成后端数据层骨架（落 <根>/server/src/，含迁移调用点）
+ *   hxym18 init pwa [--write] [--dir <站点根>]                     生成 PWA 接入文件（sw.config.mjs + scripts/gen-sw.mjs + Dockerfile.pwa-snippet）
+ *   hxym18 init stats [--write] [--dir <站点根>]                   生成只读统计出口（/api/ops/stats + x-ops-token；Next App Router）
  *   hxym18 list                                       列出已知共享包
  *
  * 退出码：check 有问题 → 1；其余 0（打印类命令失败 → 1）。
@@ -17,7 +18,7 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { resolve, dirname, basename } from 'node:path'
-import { KNOWN_PACKAGES, LEGACY_AUTH_PACKAGE, pinSpec, isTagPin, findPinProblems, depsForCheck, unusedShared, findLegacyRefs, selfWrittenCoreEndpoints, authScaffold, taroAuthScaffold, dbScaffold, pwaScaffold, pwaDeclared, pwaCheckProblems, genScriptImportsPwaKit, checkBaseline, planContracts, writeContracts, packageContractProblems } from '../src/index.mjs'
+import { KNOWN_PACKAGES, LEGACY_AUTH_PACKAGE, pinSpec, isTagPin, findPinProblems, depsForCheck, unusedShared, findLegacyRefs, selfWrittenCoreEndpoints, authScaffold, taroAuthScaffold, dbScaffold, pwaScaffold, statsScaffold, pwaDeclared, pwaCheckProblems, genScriptImportsPwaKit, checkBaseline, planContracts, writeContracts, packageContractProblems } from '../src/index.mjs'
 
 function parseArgs(argv) {
   const out = { _: [], write: false, dir: null, baseline: null, strict: false, target: null, root: null, l0: null, contracts: null }
@@ -335,29 +336,31 @@ function cmdInitDb(args) {
     dbScaffold({ dir: 'server/src' }),
     root,
     args.write,
-    '按需替换 migrations 里的示例表；在服务启动处调用 migrate()。规范默认后端 = Hono + better-sqlite3 + 版本化迁移。',
+    '按需替换 migrations 里的示例表；迁移调用点已在 db.ts 的 getDb() 内（首次建连接即应用未执行迁移）。规范默认后端 = Hono + better-sqlite3 + 版本化迁移。',
   )
 }
 
 function cmdInitPwa(args) {
-  // --dir = 站点根；生成 sw.config.mjs + scripts/gen-sw.mjs（站点根相对路径）
+  // --dir = 站点根；生成 sw.config.mjs + scripts/gen-sw.mjs + Dockerfile.pwa-snippet（站点根相对路径）
   const dir = args.dir || '.'
   return applyScaffold(
     pwaScaffold(),
     dir,
     args.write,
-    '另需：package.json 加 @hxym18/pwa-kit（hxym18 add pwa-kit --write）；build 前置 SW_VERSION=${SW_VERSION:-$(git rev-parse --short HEAD)} node scripts/gen-sw.mjs；.gitignore 忽略 public/sw.js（sw.js 为构建产出，不提交）。',
+    '另需：package.json 加 @hxym18/pwa-kit（hxym18 add pwa-kit --write）；把 Dockerfile.pwa-snippet 两段合入 Dockerfile；构建前置 node scripts/gen-sw.mjs（SW_VERSION 必填，部署主机注入 git SHA）；.gitignore 忽略 public/sw.js（sw.js 为构建产出，不提交）。',
   )
 }
 
 function cmdInitStats(args) {
+  // --dir = 站点根；生成 <src>/lib/ops-stats.ts + <src>/app/api/ops/stats/route.ts（Next App Router）
   const dir = args.dir || '.'
-  console.log(`stats（业务统计只读出口）接入清单（${dir}）：`)
-  console.log('  1. 业务事件写入**本项目库**的业务表（不进共享库）')
-  console.log('  2. 只读出口 GET /api/ops/stats：带 `x-ops-token` 才可读（token = env OPS_STATS_TOKEN）')
-  console.log('  3. 缺项≠0：读不到给 null，界面显「—」')
-  console.log('  参考实现：fang apps/fang/src/app/api/ops/stats/route.ts')
-  return 0
+  const srcDir = existsSync(resolve(dir, 'src/app')) ? 'src' : ''
+  return applyScaffold(
+    statsScaffold({ srcDir }),
+    dir,
+    args.write,
+    '另需：package.json 有 next（App Router）；env 配 OPS_STATS_TOKEN（值单源=部署 .env）；补 ops-stats.ts 里 buildOpsStats 的本站只读查询（缺项填 null，显「—」，不得填 0）。参考实现：fang apps/fang/src/app/api/ops/stats/route.ts。',
+  )
 }
 
 /** 包级契约 check（spec §7）：声明/副本/哈希/L0 相等/端点/前缀。任一项不过 → exit 1。 */

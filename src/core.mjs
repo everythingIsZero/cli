@@ -315,8 +315,10 @@ export function taroAuthScaffold(opts) {
 const DB_TS = `/**
  * db.ts — SQLite 连接单例（WAL + foreign_keys；**本文件禁 DDL**，迁移见 migrations.ts）
  * 由 \`hxym18 init db\` 生成；基准参考 hmd2 / nuantie 的 db.ts。
+ * 迁移**调用点**在此（首次建连接即应用未执行迁移，幂等）；业务代码只 import getDb()。
  */
 import Database from 'better-sqlite3'
+import { migrate } from './migrations'
 
 let db: Database.Database | null = null
 
@@ -326,6 +328,7 @@ export function getDb(): Database.Database {
   db = new Database(file)
   db.pragma('journal_mode = WAL')
   db.pragma('foreign_keys = ON')
+  migrate(db)
   return db
 }
 `
@@ -414,15 +417,131 @@ if (process.argv.includes('--stdout')) {
 }
 `
 
+const DOCKERFILE_PWA_SNIPPET = `# ============================================================
+# Dockerfile PWA 片段（由 \`hxym18 init pwa\` 生成；把两段合入你的 Dockerfile）
+#
+# 为什么：sw.js 是构建产出，但容器内通常无 .git → 版本必须由部署主机注入；
+#   缺 SW_VERSION 即构建失败，不留「镜像里没有 sw.js 却部署成功」的静默降级。
+# 用法：docker build --build-arg SW_VERSION=$(git rev-parse --short HEAD) ...
+# ============================================================
+
+# ---------- 段 1 · 构建阶段：校验 SW_VERSION 非空 + 构建期跑 gen-sw 生成 public/sw.js ----------
+RUN test -n "$SW_VERSION" || (echo "[gen-sw] SW_VERSION 必填（部署主机注入 git SHA）" >&2; exit 1) \\
+    && SW_VERSION=$SW_VERSION node scripts/gen-sw.mjs
+
+# ---------- 段 2 · 运行阶段：把构建产出的 public/（含 sw.js）整目录拷进运行镜像 ----------
+# Next 运行期从 public/ 直读 sw.js，缺这段即便构建生成了 sw.js 线上也没有。
+# monorepo 请把源路径换成 \`/app/apps/<app>/public\`（与本仓 site 根一致）。
+COPY --from=builder --chown=node:node /app/public ./public
+`
+
 /**
  * 生成 PWA 接入文件（Next 站点）。
  * 返回**站点根相对路径**（与 authScaffold/dbScaffold 同约定）；由 cmdInitPwa 调 applyScaffold 落盘。
+ * 产物：sw.config.mjs（默认读 SW_VERSION + 默认 /_next/static/ cache-first）+ scripts/gen-sw.mjs
+ *       + Dockerfile.pwa-snippet（构建期校验/生成段 + 运行镜像 COPY public 段，TOOL-1/2/DEF-5）。
  * @returns {{ path: string, content: string }[]}
  */
 export function pwaScaffold() {
   return [
     { path: 'sw.config.mjs', content: SW_CONFIG_MJS },
     { path: 'scripts/gen-sw.mjs', content: GEN_SW_MJS },
+    { path: 'Dockerfile.pwa-snippet', content: DOCKERFILE_PWA_SNIPPET },
+  ]
+}
+
+const OPS_STATS_LIB_TS = `/**
+ * ops-stats.ts — 业务统计只读出口取数（由 \`hxym18 init stats\` 生成）。
+ * 纪律：只读本站业务库；**缺项 ≠ 0**——读不到给 null，看板显「—」，不得用 0 顶替。
+ * 参考实现：fang apps/fang/src/lib/ops-stats.ts。按本站业务表补 \`buildOpsStats\` 内的查询。
+ */
+export const OPS_WINDOWS = [1, 7, 30] as const
+
+/** 本站标识（响应回带，便于 admin 多站聚合归因） */
+export const OPS_PROJECT = process.env.OPS_PROJECT ?? 'app'
+
+export interface OpsStats {
+  ok: true
+  project: string
+  window: number
+  generatedAt: string
+  /** 指标名 → 数值；取不到 = null（界面显「—」），不得填 0 */
+  metrics: Record<string, number | null>
+}
+
+export function buildOpsStats(days: number): OpsStats {
+  // TODO: 只读查本站业务库（本站 ownership），缺项填 null。
+  const metrics: Record<string, number | null> = {}
+  return { ok: true, project: OPS_PROJECT, window: days, generatedAt: new Date().toISOString(), metrics }
+}
+`
+
+const OPS_STATS_ROUTE_TS = `/**
+ * /api/ops/stats — 分享页访问的只读统计出口（由 \`hxym18 init stats\` 生成）
+ *
+ * 调用方：admin/看板服务端（容器网络内直连，**不挂 Caddy、不出公网**）。
+ * 鉴权：头 \`x-ops-token\` 必须等于 env \`OPS_STATS_TOKEN\`（值单源=部署 .env）。
+ *        未配置 → 503（本机未开通）；不匹配 → 403。定长比较防时序侧信道。
+ * 请求：GET /api/ops/stats?days=1|7|30（白名单外一律按 7 天）。
+ * 响应：admin 契约字段；**缺项 = null**（界面显「—」，不得填 0）。
+ * 纪律：只读、\`Cache-Control: no-store\`。
+ */
+import { NextResponse } from 'next/server'
+import crypto from 'node:crypto'
+import { buildOpsStats, OPS_PROJECT, OPS_WINDOWS } from '@/lib/ops-stats'
+
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+
+/** 定长比较（长度不同直接 false；长度信息非机密） */
+function safeEqual(a: string, b: string): boolean {
+  const x = Buffer.from(a)
+  const y = Buffer.from(b)
+  return x.length === y.length && crypto.timingSafeEqual(x, y)
+}
+
+export async function GET(req: Request): Promise<NextResponse> {
+  const headers = { 'Cache-Control': 'no-store' }
+
+  const token = process.env.OPS_STATS_TOKEN
+  if (!token) {
+    return NextResponse.json(
+      { ok: false, project: OPS_PROJECT, error: '本机未配置 OPS_STATS_TOKEN：统计出口未开通' },
+      { status: 503, headers },
+    )
+  }
+  if (!safeEqual(req.headers.get('x-ops-token') ?? '', token)) {
+    return NextResponse.json({ ok: false, project: OPS_PROJECT, error: 'x-ops-token 校验未通过' }, { status: 403, headers })
+  }
+
+  const raw = Number(new URL(req.url).searchParams.get('days'))
+  const days = (OPS_WINDOWS as readonly number[]).includes(raw) ? raw : 7
+
+  try {
+    return NextResponse.json(buildOpsStats(days), { headers })
+  } catch (err) {
+    // 走到这里=整形整体失败（读不到），如实回报，不糊一个空看板
+    const reason = err instanceof Error ? err.message : String(err)
+    console.warn(\`[ops-stats] 取数失败：\${reason}\`)
+    return NextResponse.json({ ok: false, project: OPS_PROJECT, error: \`统计出口异常：\${reason}\` }, { status: 500, headers })
+  }
+}
+`
+
+/**
+ * 生成业务统计只读出口（Next App Router；TOOL-13）。
+ * 产物：\`<src>/lib/ops-stats.ts\`（取数骨架，本站补 SQL）+ \`<src>/app/api/ops/stats/route.ts\`（x-ops-token 鉴权）。
+ * @param {{ srcDir?: string }} [opts] srcDir 为空串则视 app 在项目根（无 src/）
+ * @returns {{ path: string, content: string }[]}
+ */
+export function statsScaffold(opts) {
+  const o = opts || {}
+  const raw = typeof o.srcDir === 'string' ? o.srcDir : 'src'
+  const base = raw.replace(/\/+$/, '')
+  const p = (rest) => (base ? `${base}/${rest}` : rest)
+  return [
+    { path: p('lib/ops-stats.ts'), content: OPS_STATS_LIB_TS },
+    { path: p('app/api/ops/stats/route.ts'), content: OPS_STATS_ROUTE_TS },
   ]
 }
 

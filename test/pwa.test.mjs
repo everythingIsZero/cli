@@ -5,7 +5,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { execFileSync, spawnSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
@@ -15,7 +15,7 @@ const BIN = fileURLToPath(new URL('../bin/hxym18.mjs', import.meta.url))
 
 /** 跑 check；返回 { code, out }（stdout+stderr 合并；非零不抛） */
 function runCheck(dir, extra = []) {
-  const r = spawnSync('node', [BIN, 'check', dir, ...extra], { encoding: 'utf8' })
+  const r = spawnSync(process.execPath, [BIN, 'check', dir, ...extra], { encoding: 'utf8' })
   return { code: r.status, out: `${r.stdout || ''}${r.stderr || ''}` }
 }
 
@@ -33,6 +33,25 @@ test('pwaScaffold：sw.config/gen-sw 不兜 "dev"——空 VERSION 交由 buildS
   assert.doesNotMatch(byPath['sw.config.mjs'], /\|\| 'dev'/)
   assert.doesNotMatch(byPath['scripts/gen-sw.mjs'], /\|\| 'dev'/)
 })
+
+test('pwaScaffold：sw.config 默认读 SW_VERSION + 默认 /_next/static/ cache-first（DEF-1/2）', () => {
+  const byPath = Object.fromEntries(pwaScaffold().map((f) => [f.path, f.content]))
+  assert.match(byPath['sw.config.mjs'], /version: process\.env\.SW_VERSION/)
+  assert.match(byPath['sw.config.mjs'], /match: '\/_next\/static\/'/)
+  assert.match(byPath['sw.config.mjs'], /strategy: 'cache-first'/)
+})
+
+test('pwaScaffold：产出 Dockerfile.pwa-snippet 两段（SW_VERSION 校验 + 构建期 gen-sw；运行镜像 COPY public）TOOL-1/2/DEF-5', () => {
+  const byPath = Object.fromEntries(pwaScaffold().map((f) => [f.path, f.content]))
+  const snippet = byPath['Dockerfile.pwa-snippet']
+  assert.ok(snippet, '须生成 Dockerfile 片段')
+  // 段 1：SW_VERSION 非空校验 + 构建期跑 gen-sw
+  assert.match(snippet, /test -n "\$SW_VERSION"/)
+  assert.match(snippet, /node scripts\/gen-sw\.mjs/)
+  // 段 2：运行镜像含 public/（含构建生成的 sw.js）
+  assert.match(snippet, /COPY --from=builder[^\n]*public[^\n]*\.\/public/)
+})
+
 
 test('pwaCheckProblems：提交 sw.js / 缺 gen 脚本 → 报问题；干净 → 空', () => {
   assert.equal(pwaCheckProblems({ hasCommittedSw: false, genScriptPresent: true, genScriptImportsPwaKit: true, pinned: true }).length, 0)

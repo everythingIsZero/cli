@@ -4,6 +4,20 @@
 
 ## [Unreleased]
 
+### Added
+
+- **`hxym18 init pwa` 补 Dockerfile 片段**：新增 `Dockerfile.pwa-snippet`（**两段**——构建期 `test -n "$SW_VERSION"` 校验 + `node scripts/gen-sw.mjs`；运行镜像 `COPY --from=builder ... public ./public`），消 TOOL-1/2、DEF-5 的手工复制。`sw.config.mjs` 保持默认读 `SW_VERSION` + 默认 `/_next/static/` cache-first（DEF-1/2）。
+- **`hxym18 init stats` 改为生成器**（原只打印清单）：产出 `<src>/lib/ops-stats.ts`（`buildOpsStats` 取数骨架，缺项 = null）+ `<src>/app/api/ops/stats/route.ts`（只读出口，头 `x-ops-token` == `OPS_STATS_TOKEN`；未配置 → 503、不匹配 → 403、定长比较；`Cache-Control: no-store`）——TOOL-13。默认 dry-run、`--write` 落盘、幂等。
+- **`init db` 骨架补迁移调用点**：生成的 `db.ts` 在 `getDb()` 内 `import { migrate } from './migrations'` 并调用（首次建连接即应用未执行迁移）——TOOL-12。
+
+### Changed
+
+- 脚手架 `templates/project-scaffold/` 增 `.gitignore`（含 `public/sw.js`；DEF-6）。
+
+### Fixed
+
+- 测试改用 `process.execPath` 派生 `check` 子进程，不再依赖 PATH 上有 `node`（此前 `node` 不在 PATH 时整个 check/generators 套件假失败）。
+
 ## [0.6.0] - 2026-10-11
 
 ### Added
