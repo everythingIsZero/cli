@@ -390,13 +390,18 @@ function cmdCheck(args) {
   const baselinePath = args.baseline || process.env.HXYM18_BASELINE
   if (baselinePath) {
     if (!existsSync(baselinePath)) {
-      console.error(`hxym18: 基线文件不存在：${baselinePath}`)
+      // fail-closed（P-8）：路径写错 = 门禁静默失效，比误报危险得多 → 一律 exit≠0（与 --strict 无关）。
+      bad = true
+      console.error(`✗ 基线文件不存在：${baselinePath}`)
+      console.error('  基线门禁就此失效——核对 `--baseline` 路径（相对 cwd）或 HXYM18_BASELINE；不指向基线时请去掉该参数。')
     } else {
       let deviations = []
       try {
         deviations = baselineDeviations(allDeps, JSON.parse(readFileSync(baselinePath, 'utf8')))
       } catch (e) {
-        console.error(`hxym18: 基线文件解析失败 ${baselinePath}: ${(e && e.message) || e}`)
+        // fail-closed（P-8）：解析失败同样不得静默通过（半截 JSON / 指错文件）。
+        bad = true
+        console.error(`✗ 基线文件解析失败 ${baselinePath}: ${(e && e.message) || e}`)
       }
       if (deviations.length) {
         // TOOL-14：判方向——站点落后（应升站）vs 基线陈旧（站点已领先，应更新 baseline.json）。

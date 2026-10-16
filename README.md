@@ -47,6 +47,8 @@ hxym18 check Projects/auth --contracts knowledge/integration/contracts   # 包�
 
 `knowledge/integration/baseline.json` 声明共享包的 canonical tag。`check --baseline` 比对，不一致默认只告警（避免硬卡存量），`--strict` 时 `exit=1`（用于新项目/CI 门禁）。
 
+> **基线文件本身缺失/非法 → 一律 `exit≠0`**（P-8，与 `--strict` 无关）：路径写错（相对 **cwd** 解析）或 JSON 半截时，**门禁静默失效比误报危险得多**。不打算比对基线就去掉 `--baseline`。
+
 `init auth` 生成的 `lib/auth-routes.ts` 里 `resolveIdentity` 是 TODO 占位，需按本站身份库补全；契约与示例见 `knowledge/integration/`。
 
 ## 已知共享包
@@ -68,7 +70,7 @@ hxym18 check Projects/auth --contracts knowledge/integration/contracts   # 包�
 - `check` 站点级扫描**自写 auth core 端点**：**只认路由定义**——Next 路由文件路径（`**/api/auth/<core>/route.{ts,js,tsx,jsx,mjs}`）或路由定义行（`.get|.post|.put|.delete|.all|.use|.route(` 紧跟引号内 `/api/auth/<core>`）。命中 `config`/`dev-login`/`sso-verify`/`wx-qrcode`/`wx-poll`/`weapp`/`logout` 即 `exit≠0`（core 端点由 `@hxym18/auth` 单源提供；站点只留「挂载 + `resolveIdentity` + 业务端点」）。**排除注释行与测试文件**（`/test(s)/`、`.test.`、`.spec.`）；业务端点（如 `me`/`session`/`device`）与 `[action]` 通配不报。
 - `check` **站点接入兜底断言（T17b）**：默认 advisory（打印 ⚠，`exit=0`），`--strict` 才 `exit=1`——**不改默认行为，存量绿站不会突然失败**。覆盖：
   - **PWA**（声明 `@hxym18/pwa-kit` 即触发）：TOOL-1 构建期调 `gen-sw`（认**全部** `scripts.*`，不只 `scripts.build`）+ `test -n "$SW_VERSION"`；TOOL-2 运行镜像 `COPY … public ./public`；TOOL-3 `/sw.js` no-cache（`withPwaKit` / 手写头 / Hono 中间件任一——Hono 装配文件取「站点目录 **+ 仓库根 `server/`**」并集，覆盖前后端分仓布局）；TOOL-4 manifest `id` + maskable（用 `buildManifest` 时由包默认兜底）+ `apple-touch-icon`（**代码行声明**——注释里写 `apple:` 不算——**或站内已有图标文件** `public/apple-touch-icon*` / Next app 目录 `apple-icon.*`）；TOOL-5 `public/sw.js` 被忽略（**先问 `git check-ignore`**：仓库根 `.gitignore` 也生效，monorepo 的 `apps/<x>/public/sw.js` 记在根 `.gitignore` 里同样认；非 git 仓才回落文本扫描）。
-  - **auth**：TOOL-6 `resolveIdentity` 不得留生成器占位；TOOL-7 Hono catch-all 须末位（同文件内站点 `/api/auth/*` 业务端点不得注册在通配之后；跨文件挂载顺序由 `scripts/e2e/hono-catchall-order.test.mjs` 用真 Hono 验）；TOOL-8 `AUTH_INTERNAL_URL` 不得为陈旧值（许可 `http://sso-unified-next:8100` / `https://auth.hxym18.com`）；禁硬编码 `https://auth.hxym18.com`（取 `AUTH_ORIGIN`）；禁自写 `consumeReturn` / `wx-poll` 轮询。
+  - **auth**：TOOL-6 `resolveIdentity` 不得留生成器占位；TOOL-7 Hono catch-all 须末位（同文件内站点 `/api/auth/*` 业务端点不得注册在通配之后；**注释行的 catch-all 不作锚点**，P-11；跨文件挂载顺序由 `scripts/e2e/hono-catchall-order.test.mjs` 用真 Hono 验）；TOOL-8 `AUTH_INTERNAL_URL` 不得为陈旧值（许可 `http://sso-unified-next:8100` / `https://auth.hxym18.com`）；禁硬编码 `https://auth.hxym18.com`（取 `AUTH_ORIGIN`）；禁自写 `consumeReturn` / `wx-poll` 轮询。
   - **统计**（TOOL-9）：`@hxym18/analytics` 版本 ≥ `0.3.0`（hash 门控修复版）；禁硬编码 `u.hxym18.com`（走共享入口/默认 src）。
   - **UA**（TOOL-11）：不得手写 UA 正则；把 `ua` 传给 `@hxym18/env` 的 `capabilities()` 放行。
   - **未接站**（TOOL-15）：有登录/PWA/统计/UA 能力面却未声明对应包 → 提示「应接什么」（跨全仓 `package.json` 取并集，monorepo 根也成立）。

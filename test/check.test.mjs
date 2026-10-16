@@ -4,7 +4,7 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -21,6 +21,12 @@ function runCheck(dir) {
   } catch (e) {
     return { code: e.status, out: `${e.stdout || ''}${e.stderr || ''}` }
   }
+}
+
+/** 跑 check 并传额外参数；返回 { code, out }（stdout+stderr 合并；非零不抛） */
+function runCheckArgs(dir, extra) {
+  const r = spawnSync(process.execPath, [BIN, 'check', dir, ...extra], { encoding: 'utf8' })
+  return { code: r.status, out: `${r.stdout || ''}${r.stderr || ''}` }
 }
 
 /** 造临时工程（files: 相对路径 → 内容） */
@@ -252,6 +258,49 @@ test('P-4 check：独立 gen:sw 助手（构建链没调）→ TOOL-1 仍报（�
     )
     const r = runCheck(app)
     assert.match(r.out, /TOOL-1/, `构建链没调 gen-sw 时必须报：${r.out}`)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('P-8 check：--baseline 指向不存在的文件 → exit≠0（门禁不得静默失效）', () => {
+  const root = mkdtempSync(join(tmpdir(), 'hxym18-baseline-'))
+  try {
+    writeFileSync(join(root, 'package.json'), JSON.stringify({ dependencies: {} }))
+    const r = runCheckArgs(root, ['--baseline', join(root, 'nope.json')])
+    assert.equal(r.code, 1, `路径写错必须失败（现状静默 exit 0）：${r.out}`)
+    assert.match(r.out, /基线文件不存在/)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('P-8 check：--baseline 文件非法 JSON → exit≠0', () => {
+  const root = mkdtempSync(join(tmpdir(), 'hxym18-baseline-'))
+  try {
+    writeFileSync(join(root, 'package.json'), JSON.stringify({ dependencies: {} }))
+    writeFileSync(join(root, 'bad.json'), '{ not json')
+    const r = runCheckArgs(root, ['--baseline', join(root, 'bad.json')])
+    assert.equal(r.code, 1, `解析失败必须失败：${r.out}`)
+    assert.match(r.out, /基线文件解析失败/)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('P-8 check：baseline 正常但不一致 → 非 strict 仍 exit 0（advisory 语义不误伤）', () => {
+  const root = mkdtempSync(join(tmpdir(), 'hxym18-baseline-'))
+  try {
+    writeFileSync(
+      join(root, 'package.json'),
+      JSON.stringify({ dependencies: { '@hxym18/env': 'github:everythingIsZero/env#v0.1.1' } }),
+    )
+    mkdirSync(join(root, 'src'), { recursive: true })
+    writeFileSync(join(root, 'src', 'a.ts'), "import { capabilities } from '@hxym18/env'\nexport const x = capabilities\n")
+    writeFileSync(join(root, 'base.json'), JSON.stringify({ packages: { '@hxym18/env': 'github:everythingIsZero/env#v0.1.3' } }))
+    const r = runCheckArgs(root, ['--baseline', join(root, 'base.json')])
+    assert.equal(r.code, 0, `不一致默认只告警：${r.out}`)
+    assert.match(r.out, /站点落后|版本基线/)
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
