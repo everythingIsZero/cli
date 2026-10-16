@@ -205,10 +205,14 @@ function scanSite(dir) {
   for (const p of findFiles(dir, ['-type', 'f', '-name', 'package.json', ...SCAN_PRUNE])) {
     try {
       const j = JSON.parse(readMaybe(p) || '{}')
-      // P-4：**全部** `scripts.*` 值拼接（不只 `scripts.build`）——Taro 站的 SW 生成挂在
-      // `build:h5`/`dev:h5`/`verify` 上，只认 `build` 会把「已调 gen-sw」判成没调。
+      // P-4：认**构建链**脚本值（`build` / `pre·postbuild` 及其 `:` 变体）——Taro 站的 SW 生成挂在
+      // `build:h5` 上，只认 `scripts.build` 会把「已调 gen-sw」判成没调。
+      // 不取全部 `scripts.*`：独立的 `gen:sw` 助手不算「构建期生成」（那会把真漏报放过去）。
       if (j.scripts && typeof j.scripts === 'object') {
-        for (const v of Object.values(j.scripts)) if (typeof v === 'string') buildScripts.push(v)
+        for (const [k, v] of Object.entries(j.scripts)) {
+          if (typeof v !== 'string') continue
+          if (/^(pre|post)?build(:.*)?$/.test(k)) buildScripts.push(v)
+        }
       }
       for (const block of [j.dependencies, j.devDependencies, j.peerDependencies]) {
         if (block && typeof block === 'object') {

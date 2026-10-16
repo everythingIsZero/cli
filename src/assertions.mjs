@@ -89,8 +89,8 @@ export function pwaBuildChainProblems(input = {}) {
   const df = dockerfiles.join('\n')
   const problems = []
 
-  const genInDocker = /gen-sw\.mjs/.test(df)
-  const genInBuild = /gen-sw\.mjs/.test(buildScript)
+  const genInDocker = /gen-sw(\.mjs)?\b/.test(df)
+  const genInBuild = /gen-sw(\.mjs)?\b/.test(buildScript)
   if (!genInDocker && !genInBuild) {
     problems.push('TOOL-1 构建期未调用 scripts/gen-sw.mjs：SW 是构建产出，须在镜像构建或 build 脚本里生成（hxym18 init pwa --write）')
   }

@@ -236,3 +236,23 @@ test('P-4 check：真没好 → 仍报（不得放水）——未忽略 sw.js + 
     rmSync(root, { recursive: true, force: true })
   }
 })
+
+test('P-4 check：独立 gen:sw 助手（构建链没调）→ TOOL-1 仍报（防放宽过头成漏报）', () => {
+  const root = mkdtempSync(join(tmpdir(), 'hxym18-gen-'))
+  try {
+    execFileSync('git', ['-C', root, 'init', '-q'])
+    const app = join(root, 'apps', 'x')
+    mkdirSync(app, { recursive: true })
+    writeFileSync(
+      join(app, 'package.json'),
+      JSON.stringify({
+        dependencies: { '@hxym18/pwa-kit': 'github:everythingIsZero/pwa-kit#v0.5.0' },
+        scripts: { 'gen:sw': 'node scripts/gen-sw.mjs', build: 'vite build' },
+      }),
+    )
+    const r = runCheck(app)
+    assert.match(r.out, /TOOL-1/, `构建链没调 gen-sw 时必须报：${r.out}`)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})

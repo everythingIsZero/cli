@@ -19,6 +19,13 @@
 - **TOOL-12 误报**（`--strict` 误伤存量站）：迁移调用点判据由字面 `migrate(` 放宽为「`migrate` 前缀函数调用 / 幂等 `ALTER TABLE` / `user_version`」，认内联 `db.exec(DDL)` + 幂等 `ALTER` + `migrateLegacyRows(db,…)` 形态（wordinput/fang）。
 - **TOOL-4/B6 假阴**：`apple-touch-icon` 判定改为**只认代码行**（按行过滤注释，复用 `CODE_COMMENT_RE`）——注释里写 `apple:` 不再误判为已接。
 
+## [0.8.1] - 2026-10-16
+
+### Fixed
+
+- **TOOL-1 取证收窄回构建链（代码复核发现）**：0.8.0 取**全部** `scripts.*` 会漏判——站点把 `gen-sw` 当独立助手在跑（如 `gen:sw`）、构建链根本没调时不再算通过。现只认 `build` / `prebuild` / `postbuild` 及其 `:` 变体（`build:h5` 等仍认）：覆盖真实形态（Taro 站挂 `build:h5`）又不放水。
+- **`gen-sw` 匹配放宽**：`/gen-sw\.mjs/` → `/gen-sw(\.mjs)?\b/`，`node scripts/gen-sw`（无扩展名 / 改 `.ts`）同样认。
+
 ## [0.8.0] - 2026-10-16
 
 ### Fixed

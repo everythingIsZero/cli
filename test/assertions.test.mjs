@@ -460,3 +460,7 @@ test('P-4 PWA TOOL-4/B6：站内已有 apple touch icon 文件即通过（iOS �
   // 无图标文件且代码里也没声明 → 仍报（不得放水）
   assert.equal(manifestProblems({ manifests: m, layouts: [], appleIconFiles: [] }).length, 1)
 })
+
+test('P-4 PWA TOOL-1：构建链里调 gen-sw（无 .mjs 后缀）也算', () => {
+  assert.deepEqual(pwaBuildChainProblems({ dockerfiles: [], buildScript: 'node scripts/gen-sw && vite build' }), [])
+})
