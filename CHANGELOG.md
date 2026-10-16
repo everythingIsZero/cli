@@ -19,6 +19,22 @@
 - **TOOL-12 误报**（`--strict` 误伤存量站）：迁移调用点判据由字面 `migrate(` 放宽为「`migrate` 前缀函数调用 / 幂等 `ALTER TABLE` / `user_version`」，认内联 `db.exec(DDL)` + 幂等 `ALTER` + `migrateLegacyRows(db,…)` 形态（wordinput/fang）。
 - **TOOL-4/B6 假阴**：`apple-touch-icon` 判定改为**只认代码行**（按行过滤注释，复用 `CODE_COMMENT_RE`）——注释里写 `apple:` 不再误判为已接。
 
+## [0.8.0] - 2026-10-16
+
+### Fixed
+
+- **PWA 断言误报（P-4）**：
+  1. **TOOL-1** 只认 `scripts.build` → 改认**全部** `scripts.*`。Taro 站的 SW 生成挂在 `build:h5` / `dev:h5` / `verify` 上，原先被误判「构建期未调 gen-sw」。
+  2. **TOOL-3** 只扫给定目录 → Hono 装配文件取「站点目录 **+ 仓库根 `server/`**」并集。前后端分仓站点（站点在 `apps/<x>`、后端在仓库根 `server/`）的 `/sw.js` no-cache 头在服务端，原先被误判「无 no-cache 头」。
+  3. **TOOL-5** 只读扫描目录内 `.gitignore` → 改**先问 `git check-ignore`**（仓库根的 `.gitignore` 也生效，monorepo 的 `apps/<x>/public/sw.js` 记在根 `.gitignore` 里同样认得出；非 git 仓 / git 不可用才回落文本扫描）。
+  4. **TOOL-4/B6** 只看 layout 代码 → 站内已有图标**文件**（`public/apple-touch-icon*`、Next app 目录 `apple-icon.*`）也算通过——iOS 在无 link 标签时会自动请求 `/apple-touch-icon.png`，图标其实不缺。
+
+  判定未见放宽：负例（真没调 gen-sw / 真未忽略 / 真无图标文件）仍报。
+
+### Changed
+
+- `gitignoreSwProblems({ gitignores, ignoredByGit })`、`manifestProblems({ manifests, layouts, appleIconFiles })` 新增可选入参；缺省与既有调用行为不变。
+
 ## [0.7.0] - 2026-10-12
 
 ### Added
