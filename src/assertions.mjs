@@ -125,12 +125,19 @@ export function swHeaderProblems(input = {}) {
 }
 
 /**
- * TOOL-5 / DEF-6：`.gitignore` 须忽略 `public/sw.js`（`git ls-files` 只抓「已提交」，抓不到「将来会误提交」）。
- * 认 `public/sw.js` 与 monorepo 的 `apps/<x>/public/sw.js`。
- * @param {{ gitignores?: string[] }} input
+ * TOOL-5 / DEF-6：`public/sw.js` 须被忽略（`git ls-files` 只抓「已提交」，抓不到「将来会误提交」）。
+ *
+ * 判定顺序（P-4 修正）：**先问 git**（`ignoredByGit`，`git check-ignore` —— 仓库根的 `.gitignore`
+ * 同样生效，monorepo 站的 `apps/<x>/public/sw.js` 记在根 `.gitignore` 里也能认出来）；判不了
+ * （非 git 仓 / git 不可用 → `null`）才回落「只读扫描目录内 `.gitignore` 文本」这条旧路径。
+ * @param {{ gitignores?: string[], ignoredByGit?: boolean|null }} input
  * @returns {string[]}
  */
 export function gitignoreSwProblems(input = {}) {
+  if (input.ignoredByGit === true) return []
+  if (input.ignoredByGit === false) {
+    return ['TOOL-5 .gitignore 未忽略 public/sw.js：SW 是构建产出，未忽略易被误提交（脚手架模板 templates/project-scaffold/.gitignore 已含该行）']
+  }
   const gitignores = Array.isArray(input.gitignores) ? input.gitignores : []
   const text = gitignores.join('\n')
   const covered = /^\s*(?:apps\/[^/\s]+\/)?public\/sw\.js\s*$/m.test(text)
@@ -141,12 +148,17 @@ export function gitignoreSwProblems(input = {}) {
 /**
  * TOOL-4 / B6：manifest `id` / maskable 图标 + `apple-touch-icon`。
  * 用 `@hxym18/pwa-kit/manifest` 的 `buildManifest` 时，`id`/maskable 由包默认兜底，只查 apple-touch-icon。
- * @param {{ manifests?: string[], layouts?: string[] }} input
+ *
+ * apple 一项的判据（P-4 修正）：**代码里声明**（layout metadata 的 `icons.apple` / `apple-touch-icon`）
+ * **或**站内已有图标**文件**（`appleIconFiles`，如 `public/apple-touch-icon.png`——iOS 在无 link 标签时
+ * 会自动请求该根路径，Next 的 `apple-icon.*` 文件约定同理）都算通过；只看代码会把「图标其实有」判成没有。
+ * @param {{ manifests?: string[], layouts?: string[], appleIconFiles?: string[] }} input
  * @returns {string[]}
  */
 export function manifestProblems(input = {}) {
   const manifests = Array.isArray(input.manifests) ? input.manifests : []
   const layouts = Array.isArray(input.layouts) ? input.layouts : []
+  const appleIconFiles = Array.isArray(input.appleIconFiles) ? input.appleIconFiles : []
   const problems = []
   const text = manifests.join('\n')
 
@@ -161,12 +173,13 @@ export function manifestProblems(input = {}) {
     }
   }
   const lt = layouts.join('\n')
-  // apple-touch-icon 须出现在**代码行**（注释行不算：注释里写 `apple:` 会让 iOS 图标缺失却假绿）。
+  // apple-touch-icon：**代码行**声明（注释行不算：注释里写 `apple:` 会让 iOS 图标缺失却假绿）
+  // 或**站内已有图标文件**（P-4：iOS 自动请求 /apple-touch-icon.png；Next app 目录的 apple-icon.* 同效）。
   const appleInCode = lt
     .split('\n')
     .some((line) => !CODE_COMMENT_RE.test(line) && (/apple-touch-icon/.test(line) || /apple\s*:\s*['"[{]/.test(line)))
-  if (!appleInCode) {
-    problems.push('TOOL-4/B6 缺 apple-touch-icon：iOS 加到主屏无图标（layout metadata 的 `icons.apple`）')
+  if (!appleInCode && appleIconFiles.length === 0) {
+    problems.push('TOOL-4/B6 缺 apple-touch-icon：iOS 加到主屏无图标（layout metadata 的 `icons.apple`，或放 public/apple-touch-icon.png）')
   }
   return problems
 }
@@ -461,8 +474,8 @@ export function runSiteAssertions(evidence = {}) {
       ? [
           ...pwaBuildChainProblems({ dockerfiles: e.dockerfiles, buildScript: e.buildScript }),
           ...swHeaderProblems({ nextConfigs: e.nextConfigs, honoApps: e.honoApps }),
-          ...gitignoreSwProblems({ gitignores: e.gitignores }),
-          ...manifestProblems({ manifests: e.manifests, layouts: e.layouts }),
+          ...gitignoreSwProblems({ gitignores: e.gitignores, ignoredByGit: e.ignoredByGit }),
+          ...manifestProblems({ manifests: e.manifests, layouts: e.layouts, appleIconFiles: e.appleIconFiles }),
         ]
       : [],
     auth: [

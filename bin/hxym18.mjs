@@ -17,7 +17,7 @@
  */
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
-import { resolve, dirname, basename } from 'node:path'
+import { resolve, dirname, basename, join } from 'node:path'
 import { KNOWN_PACKAGES, LEGACY_AUTH_PACKAGE, pinSpec, isTagPin, findPinProblems, depsForCheck, unusedShared, findLegacyRefs, selfWrittenCoreEndpoints, authScaffold, taroAuthScaffold, dbScaffold, pwaScaffold, statsScaffold, pwaDeclared, pwaCheckProblems, genScriptImportsPwaKit, baselineDeviations, runSiteAssertions, planContracts, writeContracts, packageContractProblems } from '../src/index.mjs'
 
 function parseArgs(argv) {
@@ -113,6 +113,33 @@ function findFiles(dir, args) {
   }
 }
 
+/** `git rev-parse --show-toplevel`：拿仓库根（非 git 仓/git 不可用 → null）。 */
+function gitToplevel(dir) {
+  try {
+    const out = execFileSync('git', ['-C', dir, 'rev-parse', '--show-toplevel'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim()
+    return out || null
+  } catch (e) {
+    return null
+  }
+}
+
+/**
+ * `git check-ignore` 判某路径是否被忽略（P-4）：**跨目录正确**——仓库根的 `.gitignore`
+ * 也生效，而只读扫描目录里的 `.gitignore` 会漏（monorepo 站点的根 `.gitignore` 覆盖 `apps/<x>/public/sw.js`）。
+ * @returns {boolean|null} true=已忽略 · false=未忽略 · null=判不了（非 git 仓/git 不可用）→ 调用方回落文本扫描
+ */
+function gitIgnored(dir, rel) {
+  try {
+    execFileSync('git', ['-C', dir, 'check-ignore', '-q', '--', rel], { stdio: 'ignore' })
+    return true
+  } catch (e) {
+    return e && e.status === 1 ? false : null
+  }
+}
+
 // 扫描时排除：依赖 / 构建产物 / VCS；测试文件不算站点运行代码（与既有端点扫描同口径）。
 const SCAN_PRUNE = ['-not', '-path', '*/node_modules/*', '-not', '-path', '*/.next/*', '-not', '-path', '*/.git/*', '-not', '-path', '*/dist/*', '-not', '-path', '*/build/*']
 const TEST_PATH_RE = /(?:\/tests?\/|\.test\.|\.spec\.)/
@@ -136,8 +163,32 @@ function scanSite(dir) {
   const gitignores = readAll(['-name', '.gitignore'])
   const manifests = readAll(['-name', 'manifest.*'])
   const layouts = [...readAll(['-name', 'layout.*']), ...readAll(['-name', 'index.html'])]
+  // iOS 主屏图标：`public/apple-touch-icon.png` 会被 iOS **自动请求**（无 link 标签也生效），
+  // 以及 Next 的 app 目录文件约定 `apple-icon.(png|svg|…)`——两者都算「有图标」（P-4）。
+  const appleIconFiles = [
+    ...findFiles(dir, ['-type', 'f', '-iname', 'apple-touch-icon*', ...SCAN_PRUNE]),
+    ...findFiles(dir, ['-type', 'f', '-iname', 'apple-icon.*', ...SCAN_PRUNE]),
+  ]
   // 只收 Hono 装配文件（含 `new Hono(`，允许 `new Hono<Env>(` 泛型）；/sw.js 头判定用它。
   const honoApps = sources.filter((s) => /new\s+Hono\s*(?:<[^>]*>)?\s*\(/.test(s.content)).map((s) => s.content)
+  // P-4：Taro/前后端分仓站点的 `/sw.js` 头在**仓库根的 `server/`**（如 nuantie），不在站点目录内——
+  // 只扫给定目录会把「已设 no-cache」判成没设。仅当仓库根确有 `server/`（本生态约定的后端目录）才并入。
+  const toplevel = gitToplevel(dir)
+  if (toplevel) {
+    const serverDir = join(toplevel, 'server')
+    if (existsSync(serverDir) && resolve(serverDir) !== resolve(dir)) {
+      const serverFiles = []
+      for (const g of ['*.ts', '*.js', '*.mjs', '*.cjs']) {
+        serverFiles.push(...findFiles(serverDir, ['-type', 'f', '-name', g, ...SCAN_PRUNE]))
+      }
+      for (const p of [...new Set(serverFiles)].filter((f) => !TEST_PATH_RE.test(f))) {
+        const text = readMaybe(p)
+        if (/new\s+Hono\s*(?:<[^>]*>)?\s*\(/.test(text)) honoApps.push(text)
+      }
+    }
+  }
+  // P-4：是否忽略 `public/sw.js` 交给 git 判（根 `.gitignore` 也生效）；判不了（非 git 仓）→ null 回落文本扫描。
+  const ignoredByGit = gitIgnored(dir, 'public/sw.js')
 
   const envFiles = []
   for (const name of ['.env.example', '.env']) {
@@ -154,7 +205,11 @@ function scanSite(dir) {
   for (const p of findFiles(dir, ['-type', 'f', '-name', 'package.json', ...SCAN_PRUNE])) {
     try {
       const j = JSON.parse(readMaybe(p) || '{}')
-      if (j.scripts && typeof j.scripts.build === 'string') buildScripts.push(j.scripts.build)
+      // P-4：**全部** `scripts.*` 值拼接（不只 `scripts.build`）——Taro 站的 SW 生成挂在
+      // `build:h5`/`dev:h5`/`verify` 上，只认 `build` 会把「已调 gen-sw」判成没调。
+      if (j.scripts && typeof j.scripts === 'object') {
+        for (const v of Object.values(j.scripts)) if (typeof v === 'string') buildScripts.push(v)
+      }
       for (const block of [j.dependencies, j.devDependencies, j.peerDependencies]) {
         if (block && typeof block === 'object') {
           for (const [k, v] of Object.entries(block)) {
@@ -173,8 +228,10 @@ function scanSite(dir) {
     nextConfigs,
     honoApps,
     gitignores,
+    ignoredByGit,
     manifests,
     layouts,
+    appleIconFiles,
     envFiles,
     buildScript: buildScripts.join('\n'),
     declaredShared,

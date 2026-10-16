@@ -178,3 +178,61 @@ test('check：注释/测试文件提及 core 端点 → exit 0（不误报）', 
     },
   )
 })
+
+// ---------------------------------------------------------------- P-4 误报（monorepo 三连）
+
+test('P-4 check：monorepo —— 根 .gitignore 忽略 apps/x/public/sw.js + build:h5 调 gen-sw + 仓库根 server/ 设 /sw.js no-cache → TOOL-1/3/5 全不报', () => {
+  const root = mkdtempSync(join(tmpdir(), 'hxym18-mono-'))
+  try {
+    execFileSync('git', ['-C', root, 'init', '-q'])
+    writeFileSync(join(root, '.gitignore'), 'apps/x/public/sw.js\n')
+    const app = join(root, 'apps', 'x')
+    mkdirSync(join(app, 'scripts'), { recursive: true })
+    writeFileSync(
+      join(app, 'package.json'),
+      JSON.stringify({
+        dependencies: { '@hxym18/pwa-kit': 'github:everythingIsZero/pwa-kit#v0.5.0' },
+        // 只挂 build:h5（无 scripts.build）——旧实现因此误报 TOOL-1
+        scripts: { 'build:h5': 'node scripts/gen-sw.mjs && vite build' },
+      }),
+    )
+    writeFileSync(
+      join(app, 'scripts', 'gen-sw.mjs'),
+      "import { buildSw } from '@hxym18/pwa-kit/sw'\nexport const x = buildSw\n",
+    )
+    // 后端在**仓库根** server/（前后端分仓布局）——旧实现只扫 apps/x，因此误报 TOOL-3
+    mkdirSync(join(root, 'server', 'src'), { recursive: true })
+    writeFileSync(
+      join(root, 'server', 'src', 'app.ts'),
+      "import { Hono } from 'hono'\nconst app = new Hono()\napp.use('/sw.js', async (c, next) => { await next()\n  c.res.headers.set('Cache-Control', 'no-cache') })\n",
+    )
+
+    const r = runCheck(app)
+    assert.doesNotMatch(r.out, /TOOL-1/, `不应再报 TOOL-1：${r.out}`)
+    assert.doesNotMatch(r.out, /TOOL-3/, `不应再报 TOOL-3：${r.out}`)
+    assert.doesNotMatch(r.out, /TOOL-5/, `不应再报 TOOL-5：${r.out}`)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('P-4 check：真没好 → 仍报（不得放水）——未忽略 sw.js + 没调 gen-sw', () => {
+  const root = mkdtempSync(join(tmpdir(), 'hxym18-mono-neg-'))
+  try {
+    execFileSync('git', ['-C', root, 'init', '-q'])
+    const app = join(root, 'apps', 'x')
+    mkdirSync(app, { recursive: true })
+    writeFileSync(
+      join(app, 'package.json'),
+      JSON.stringify({
+        dependencies: { '@hxym18/pwa-kit': 'github:everythingIsZero/pwa-kit#v0.5.0' },
+        scripts: { build: 'vite build' },
+      }),
+    )
+    const r = runCheck(app)
+    assert.match(r.out, /TOOL-1/)
+    assert.match(r.out, /TOOL-5/)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})

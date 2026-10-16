@@ -435,3 +435,28 @@ test('check e2e：baseline 方向——站点落后 vs 基线陈旧（TOOL-14，
     rmSync(dirname(baseline), { recursive: true, force: true })
   }
 })
+
+// ---------------------------------------------------------------- P-4 误报修正
+
+test('P-4 PWA TOOL-1：构建脚本（build:h5 等）调 gen-sw 即通过，不再只认 scripts.build', () => {
+  assert.deepEqual(pwaBuildChainProblems({ dockerfiles: [], buildScript: 'node scripts/gen-sw.mjs && taro build --type h5' }), [])
+  assert.deepEqual(pwaBuildChainProblems({ dockerfiles: [], buildScript: 'taro build --type h5 && node scripts/gen-sw.mjs' }), [])
+  // 负例：完全没调 gen-sw → 仍报（不得放水）
+  assert.equal(pwaBuildChainProblems({ dockerfiles: [], buildScript: 'vite build' }).length, 1)
+})
+
+test('P-4 PWA TOOL-5：git 判定已忽略即通过；git 不可用时回落文本扫描（仍可失败）', () => {
+  assert.deepEqual(gitignoreSwProblems({ gitignores: [], ignoredByGit: true }), [])
+  assert.equal(gitignoreSwProblems({ gitignores: [], ignoredByGit: false }).length, 1)
+  assert.equal(gitignoreSwProblems({ gitignores: [], ignoredByGit: null }).length, 1, 'git 不可用 → 回落，缺即失败')
+  assert.deepEqual(gitignoreSwProblems({ gitignores: ['public/sw.js'], ignoredByGit: null }), [])
+  assert.equal(gitignoreSwProblems({ gitignores: [], ignoredByGit: undefined }).length, 1)
+})
+
+test('P-4 PWA TOOL-4/B6：站内已有 apple touch icon 文件即通过（iOS 自动请求 /apple-touch-icon.png）', () => {
+  // manifest 本身合规（有 id + maskable），只验 apple 一项
+  const m = ['{ "id": "/", "start_url": "/", "icons": [{ "src": "/m-192.png", "purpose": "maskable" }] }']
+  assert.deepEqual(manifestProblems({ manifests: m, layouts: [], appleIconFiles: ['public/apple-touch-icon.png'] }), [])
+  // 无图标文件且代码里也没声明 → 仍报（不得放水）
+  assert.equal(manifestProblems({ manifests: m, layouts: [], appleIconFiles: [] }).length, 1)
+})
