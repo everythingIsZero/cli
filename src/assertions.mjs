@@ -202,8 +202,67 @@ export function resolveIdentityPlaceholderProblems(sources = []) {
 }
 
 /**
+ * 逐行剥掉注释内容（行注释 + 块注释，**含跨行**），保留行结构（行号不变、非注释代码字符逐字保留）。
+ *
+ * 为什么不用 `CODE_COMMENT_RE` 逐行判：行首锚定的正则只能识出「整行都是注释」，识不出
+ * ①`/* last *​/ app.all(...)`（行内块注释前缀）→ 真锚点被整行跳过 → 其后站点端点漏报；
+ * ②跨行块注释里的注册行 → 被当锚点 → 误报。
+ * 剥完再跑锚点/端点正则，两侧同口径，两个方向的错都在此处消掉。
+ * （权衡：字符串里的 `//` 也会被截断——注册行不含 URL，实际无影响。）
+ * @param {string} source
+ * @returns {string[]} 每行剥注释后的文本
+ */
+function stripComments(source) {
+  const out = []
+  let inBlock = false
+  let quote = null
+  for (const line of String(source == null ? '' : source).split('\n')) {
+    let code = ''
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i]
+      const next = line[i + 1]
+      if (inBlock) {
+        if (ch === '*' && next === '/') {
+          inBlock = false
+          i++
+        }
+        continue
+      }
+      // 字符串里的 `/*`（如 `'/api/auth/*'`）不是注释起点——须先认引号，否则锚点行会被自己吞掉。
+      if (quote) {
+        code += ch
+        if (ch === '\\') {
+          code += next == null ? '' : next
+          i++
+          continue
+        }
+        if (ch === quote) quote = null
+        continue
+      }
+      if (ch === '"' || ch === "'" || ch === '`') {
+        quote = ch
+        code += ch
+        continue
+      }
+      if (ch === '/' && next === '*') {
+        inBlock = true
+        i++
+        continue
+      }
+      if (ch === '/' && next === '/') break
+      code += ch
+    }
+    // 普通引号不跨行（未闭合视为本行结束；反引号/模板串可跨行，保留状态）
+    if (quote && quote !== '`') quote = null
+    out.push(code)
+  }
+  return out
+}
+
+/**
  * TOOL-7：Hono catch-all 必须末位注册（I15）。
  * 同文件内：共享 auth 通配注册行之后，不得再出现站点自有 `/api/auth/<业务>` 路由定义（会被通配吞掉）。
+ * 锚点与端点都在**剥掉注释**的文本上判（P-11：注释里的字面量既不作锚点，也不因注释前缀吃掉真锚点）。
  * 跨文件挂载顺序由 `scripts/e2e/hono-catchall-order.test.mjs` 用真 Hono 验（纯文本判不了框架匹配顺序）。
  * @param {{ path: string, content: string }[]} sources
  * @returns {string[]}
@@ -214,17 +273,15 @@ export function honoCatchAllOrderProblems(sources = []) {
   for (const { path, content } of Array.isArray(sources) ? sources : []) {
     const s = typeof content === 'string' ? content : ''
     if (!s) continue
-    const lines = s.split('\n')
+    const lines = stripComments(s)
     const catchAllIdx = lines.findIndex(
       (l) =>
-        !CODE_COMMENT_RE.test(l) &&
-        (/\.(?:all|use)\s*\(\s*['"`]\/api\/auth\/\*['"`]/.test(l) ||
-          /\.route\s*\(\s*['"`]\/['"`]\s*,\s*authRoutes/.test(l)),
+        /\.(?:all|use)\s*\(\s*['"`]\/api\/auth\/\*['"`]/.test(l) ||
+        /\.route\s*\(\s*['"`]\/['"`]\s*,\s*authRoutes/.test(l),
     )
     if (catchAllIdx < 0) continue
     for (let i = catchAllIdx + 1; i < lines.length; i++) {
       const line = lines[i]
-      if (CODE_COMMENT_RE.test(line)) continue
       const m = /\.(?:get|post|put|delete|all|use|route)\(\s*['"`]\/api\/auth\/([^/\s'"`?*]+)/.exec(line)
       if (!m || core.has(m[1])) continue
       problems.push(`TOOL-7 ${path}: site 自有端点 /api/auth/${m[1]} 注册在 auth catch-all 之后 → 会被通配吞掉（catch-all 须末位）`)

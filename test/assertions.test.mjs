@@ -488,3 +488,21 @@ test('P-11 TOOL-7：站点端点真注册在 catch-all 之后 → 仍报（不�
   assert.equal(problems.length, 1)
   assert.match(problems[0], /\/api\/auth\/device/)
 })
+
+test('P-11 TOOL-7：行内块注释前缀（/* last */）不得吃掉真锚点（复核发现的漏判）', () => {
+  const content = ["/* last */ authRoutes.all('/api/auth/*', routes.dispatch)", "authRoutes.post('/api/auth/device', handler)", ''].join('\n')
+  const problems = honoCatchAllOrderProblems([{ path: 'x.ts', content }])
+  assert.equal(problems.length, 1, '锚点被注释前缀吞掉 → 真「在 catch-all 之后」漏报')
+  assert.match(problems[0], /device/)
+})
+
+test('P-11 TOOL-7：跨行块注释里的 catch-all 行不算锚点（不误报）', () => {
+  const content = [
+    '/*',
+    "authRoutes.all('/api/auth/*', routes.dispatch)",
+    '*/',
+    "authRoutes.post('/api/auth/device', handler)",
+    '',
+  ].join('\n')
+  assert.deepEqual(honoCatchAllOrderProblems([{ path: 'x.ts', content }]), [])
+})

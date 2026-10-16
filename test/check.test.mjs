@@ -305,3 +305,15 @@ test('P-8 check：baseline 正常但不一致 → 非 strict 仍 exit 0（adviso
     rmSync(root, { recursive: true, force: true })
   }
 })
+
+test('P-8 check：--baseline 指到合法 JSON 但不是基线形状（如 package.json）→ exit≠0', () => {
+  const root = mkdtempSync(join(tmpdir(), 'hxym18-baseline-'))
+  try {
+    writeFileSync(join(root, 'package.json'), JSON.stringify({ dependencies: {} }))
+    const r = runCheckArgs(root, ['--baseline', join(root, 'package.json')])
+    assert.equal(r.code, 1, `形状不对也必须失败（否则指错文件仍静默）：${r.out}`)
+    assert.match(r.out, /基线文件形状/)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})

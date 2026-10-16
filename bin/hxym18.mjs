@@ -397,7 +397,22 @@ function cmdCheck(args) {
     } else {
       let deviations = []
       try {
-        deviations = baselineDeviations(allDeps, JSON.parse(readFileSync(baselinePath, 'utf8')))
+        const baseline = JSON.parse(readFileSync(baselinePath, 'utf8'))
+        // 形状不对也 fail-closed（P-8 残余）：指到 package.json 这类**合法 JSON** 时，
+        // `baselineDeviations` 会因无 `packages` 返 [] → 门禁依旧静默通过。
+        if (
+          !baseline ||
+          typeof baseline !== 'object' ||
+          Array.isArray(baseline.packages) ||
+          typeof baseline.packages !== 'object' ||
+          Object.keys(baseline.packages).length === 0
+        ) {
+          bad = true
+          console.error(`✗ 基线文件形状不对 ${baselinePath}`)
+          console.error('  须形如 { "packages": { "@hxym18/<pkg>": "github:everythingIsZero/<repo>#vX.Y.Z" } }；指错文件与路径写错一样会让门禁静默失效。')
+        } else {
+          deviations = baselineDeviations(allDeps, baseline)
+        }
       } catch (e) {
         // fail-closed（P-8）：解析失败同样不得静默通过（半截 JSON / 指错文件）。
         bad = true

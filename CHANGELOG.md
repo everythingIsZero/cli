@@ -19,6 +19,13 @@
 - **TOOL-12 误报**（`--strict` 误伤存量站）：迁移调用点判据由字面 `migrate(` 放宽为「`migrate` 前缀函数调用 / 幂等 `ALTER TABLE` / `user_version`」，认内联 `db.exec(DDL)` + 幂等 `ALTER` + `migrateLegacyRows(db,…)` 形态（wordinput/fang）。
 - **TOOL-4/B6 假阴**：`apple-touch-icon` 判定改为**只认代码行**（按行过滤注释，复用 `CODE_COMMENT_RE`）——注释里写 `apple:` 不再误判为已接。
 
+## [0.9.1] - 2026-10-16
+
+### Fixed
+
+- **TOOL-7 改为「剥注释后再判」（P-11 的完善）**：0.9.0 只用行首锚定的 `CODE_COMMENT_RE` 过滤注释行，仍有两处错——①`/* last */ authRoutes.all('/api/auth/*', …)` 这种**行内块注释前缀**会把真锚点整行跳过 → 其后站点端点**漏报**（0.9.0 引入的假阴）；②**跨行块注释**里的注册行被当锚点 → 误报。现在锚点与端点都在**逐行剥掉注释（含跨行、且认引号内的 `/*`）**的文本上判，两个方向都消掉。前一版「补一行过滤」的修法已被此替代。
+- **`--baseline` 形状校验（P-8 残余）**：解析成功但**不是基线形状**（如指到 `package.json`、`123`）时 `baselineDeviations` 因无 `packages` 返 `[]` → 门禁照旧静默通过。现要求 `packages` 为非空对象，否则 `exit≠0` 并提示期望形状。
+
 ## [0.9.0] - 2026-10-16
 
 ### Fixed
