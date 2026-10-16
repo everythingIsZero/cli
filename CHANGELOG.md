@@ -19,6 +19,17 @@
 - **TOOL-12 误报**（`--strict` 误伤存量站）：迁移调用点判据由字面 `migrate(` 放宽为「`migrate` 前缀函数调用 / 幂等 `ALTER TABLE` / `user_version`」，认内联 `db.exec(DDL)` + 幂等 `ALTER` + `migrateLegacyRows(db,…)` 形态（wordinput/fang）。
 - **TOOL-4/B6 假阴**：`apple-touch-icon` 判定改为**只认代码行**（按行过滤注释，复用 `CODE_COMMENT_RE`）——注释里写 `apple:` 不再误判为已接。
 
+## [0.9.0] - 2026-10-16
+
+### Fixed
+
+- **`--baseline` 门禁不再静默失效（P-8）**：基线文件**不存在**（路径相对 **cwd** 解析，写错是常见坑）或**解析失败**（半截 JSON / 指错文件）原先只打一行 `hxym18: …` 就继续走完并 `exit 0`——门禁形同没有。现在两者一律 `exit≠0`（与 `--strict` 无关），并提示「不打算比基线就去掉 `--baseline`」。
+- **TOOL-7 注释行不再被当作 catch-all 锚点（P-11）**：`honoCatchAllOrderProblems` 的 `findIndex` 漏滤注释行，于是注释里写一句 `authRoutes.all('/api/auth/*', …)` 就会把**注册在真实 catch-all 之前**的站点端点误报成「在通配之后」。现与同函数循环体同口径使用 `CODE_COMMENT_RE`；真「站点端点在 catch-all 之后」仍报。
+
+### Changed
+
+- ⚠️ **P-8 会打断依赖「路径写错也 exit 0」的 CI**：这正是修复目的；请核对各站/CI 里 `--baseline` 的路径（相对 cwd）。
+
 ## [0.8.1] - 2026-10-16
 
 ### Fixed
