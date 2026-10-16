@@ -464,3 +464,27 @@ test('P-4 PWA TOOL-4/B6：站内已有 apple touch icon 文件即通过（iOS �
 test('P-4 PWA TOOL-1：构建链里调 gen-sw（无 .mjs 后缀）也算', () => {
   assert.deepEqual(pwaBuildChainProblems({ dockerfiles: [], buildScript: 'node scripts/gen-sw && vite build' }), [])
 })
+
+// ---------------------------------------------------------------- P-11 注释行不作 catch-all 锚点
+
+test('P-11 TOOL-7：注释里的 catch-all 不得当锚点（否则误报其后/其前的站点端点）', () => {
+  const content = [
+    "import { Hono } from 'hono'",
+    "// 旧写法（已废）：authRoutes.all('/api/auth/*', routes.dispatch)",
+    "authRoutes.post('/api/auth/device', handler)   // 站点业务端点：注册在真 catch-all 之前",
+    "authRoutes.all('/api/auth/*', routes.dispatch)",
+    '',
+  ].join('\n')
+  assert.deepEqual(honoCatchAllOrderProblems([{ path: 'server/src/auth.ts', content }]), [])
+})
+
+test('P-11 TOOL-7：站点端点真注册在 catch-all 之后 → 仍报（不得放水）', () => {
+  const content = [
+    "authRoutes.all('/api/auth/*', routes.dispatch)",
+    "authRoutes.post('/api/auth/device', handler)",
+    '',
+  ].join('\n')
+  const problems = honoCatchAllOrderProblems([{ path: 'server/src/auth.ts', content }])
+  assert.equal(problems.length, 1)
+  assert.match(problems[0], /\/api\/auth\/device/)
+})

@@ -217,8 +217,9 @@ export function honoCatchAllOrderProblems(sources = []) {
     const lines = s.split('\n')
     const catchAllIdx = lines.findIndex(
       (l) =>
-        /\.(?:all|use)\s*\(\s*['"`]\/api\/auth\/\*['"`]/.test(l) ||
-        /\.route\s*\(\s*['"`]\/['"`]\s*,\s*authRoutes/.test(l),
+        !CODE_COMMENT_RE.test(l) &&
+        (/\.(?:all|use)\s*\(\s*['"`]\/api\/auth\/\*['"`]/.test(l) ||
+          /\.route\s*\(\s*['"`]\/['"`]\s*,\s*authRoutes/.test(l)),
     )
     if (catchAllIdx < 0) continue
     for (let i = catchAllIdx + 1; i < lines.length; i++) {
